@@ -136,7 +136,7 @@ public:
 	ofVec2f mouseStart;
 	ofVec2f tileSize = {520, 384};
 
-	TileCacheLRU tileCache{200};
+	TileCacheLRU tileCache{300};
 	std::unordered_set<TileKey> tileKeys;
 
 	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;
@@ -144,5 +144,7 @@ public:
 
 	void loadTileList();
 	void loadVisibleTiles();
+	void preloadZoomIn();
+	void preloadZoomOut();
 	void drawTiles();
 };

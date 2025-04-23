@@ -12,6 +12,8 @@ void ofApp::setup()
 
     loader.start();
     loadTileList();
+    loadVisibleTiles();
+    preloadZoomIn();
 
     ofResetElapsedTimeCounter();
 }
@@ -19,8 +21,9 @@ void ofApp::setup()
 //--------------------------------------------------------------
 void ofApp::update()
 {
-    loader.dispatchMainCallbacks();
+    loader.dispatchMainCallbacks(12);
 
+    float prevZoom = currentZoom.getValue();
     bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
 
     if (zoomUpdated)
@@ -38,6 +41,12 @@ void ofApp::update()
         }
 
         loadVisibleTiles();
+
+        bool zoomingIn = (prevZoom > currentZoom.getValue());
+        if (scale > 0.8f && zoomingIn)
+            preloadZoomIn();
+        else if (scale < 0.7f && !zoomingIn)
+            preloadZoomOut();
     }
 
     fpsCounter.update();
@@ -137,8 +146,7 @@ void ofApp::mouseReleased(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
-    // targetZoom -= scrollY * 0.01;
-    currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.01);
+    currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015);
 }
 
 //--------------------------------------------------------------
@@ -165,18 +173,20 @@ void ofApp::loadVisibleTiles()
     if (lastZoomLoaded != zoom)
         tileKeys.clear();
 
-    const int left = -offset.x;
-    const int right = -offset.x + windowWidth;
-    const int top = -offset.y;
-    const int bottom = -offset.y + windowHeight;
+    // add an additional margin to preload tiles offscreen
+    const int left = -offset.x - 520;
+    const int right = -offset.x + windowWidth + 520;
+    const int top = -offset.y - 384;
+    const int bottom = -offset.y + windowHeight + 384;
 
+    // TODO: reduce this to only neighbouring tiles
     for (const TileKey &key : avaliableTiles[zoom])
     {
         if (key.x >= right || key.x + key.width <= left ||
             key.y >= bottom || key.y + key.height <= top)
         {
-            // if (tileKeys.count(key))
-            // tileKeys.erase(key);
+            if (tileKeys.count(key))
+                tileKeys.erase(key);
             continue;
         }
 
@@ -191,6 +201,84 @@ void ofApp::loadVisibleTiles()
     }
 
     lastZoomLoaded = zoom;
+}
+
+void ofApp::preloadZoomIn()
+{
+    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    static int lastNextZoom = -1;
+    if (zoom <= 1)
+        return;
+
+    int zoomNext = zoom / 2;
+    if (zoomNext == lastNextZoom)
+        return;
+
+    lastNextZoom = zoomNext;
+    ofLogNotice("ofApp::preloadZoomIn()");
+
+    const int windowWidth = ofGetWidth() / scale;
+    const int windowHeight = ofGetHeight() / scale;
+
+    // add an additional margin to preload tiles offscreen
+    const int left = -offset.x - 520;
+    const int right = -offset.x + windowWidth + 520;
+    const int top = -offset.y - 384;
+    const int bottom = -offset.y + windowHeight + 384;
+
+    for (const TileKey &key : avaliableTiles[zoomNext])
+    {
+        if (key.x / 2 >= right || (key.x + key.width) / 2 <= left ||
+            key.y / 2 >= bottom || (key.y + key.height) / 2 <= top)
+        {
+            continue;
+        }
+
+        if (!tileCache.contains(key))
+        {
+            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                               { tileCache.put(key, tile.getTexture()); });
+        }
+    }
+}
+
+void ofApp::preloadZoomOut()
+{
+    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    static int lastNextZoom = -1;
+    if (zoom >= 32)
+        return;
+
+    int zoomNext = zoom * 2;
+    if (zoomNext == lastNextZoom)
+        return;
+
+    lastNextZoom = zoomNext;
+    ofLogNotice("ofApp::preloadZoomOut()");
+
+    const int windowWidth = ofGetWidth() / scale;
+    const int windowHeight = ofGetHeight() / scale;
+
+    // add an additional margin to preload tiles offscreen
+    const int left = -offset.x - 520;
+    const int right = -offset.x + windowWidth + 520;
+    const int top = -offset.y - 384;
+    const int bottom = -offset.y + windowHeight + 384;
+
+    for (const TileKey &key : avaliableTiles[zoomNext])
+    {
+        if (key.x * 2 >= right || (key.x + key.width) * 2 <= left ||
+            key.y * 2 >= bottom || (key.y + key.height) * 2 <= top)
+        {
+            continue;
+        }
+
+        if (!tileCache.contains(key))
+        {
+            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                               { tileCache.put(key, tile.getTexture()); });
+        }
+    }
 }
 
 void ofApp::drawTiles()

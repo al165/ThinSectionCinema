@@ -36,13 +36,15 @@ public:
         condition.notify_all();
     }
 
-    void dispatchMainCallbacks()
+    void dispatchMainCallbacks(int maxCount)
     {
         std::lock_guard<std::mutex> lock(callbackMutex);
-        while (!mainThreadCallbacks.empty())
+        int n = 0;
+        while (!mainThreadCallbacks.empty() && n < maxCount)
         {
             mainThreadCallbacks.front()();
             mainThreadCallbacks.pop();
+            n++;
         }
     }
 

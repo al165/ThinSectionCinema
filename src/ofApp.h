@@ -7,6 +7,7 @@
 
 #include "ofMain.h"
 #include "SmoothValue.h"
+#include "AsyncTextureLoader.hpp"
 
 struct TileKey
 {
@@ -119,6 +120,7 @@ public:
 	float lastFrameTime;
 
 	ofDirectory tiles;
+	AsyncTextureLoader loader;
 
 	const float maxZoom = 1.f;
 	const float minZoom = 8.f;

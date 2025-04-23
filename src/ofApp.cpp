@@ -10,6 +10,7 @@ void ofApp::setup()
     tiles.allowExt("jpg");
     tiles.listDir();
 
+    loader.start();
     loadTileList();
 
     ofResetElapsedTimeCounter();
@@ -18,7 +19,9 @@ void ofApp::setup()
 //--------------------------------------------------------------
 void ofApp::update()
 {
-    bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameFilteredSecs());
+    loader.dispatchMainCallbacks();
+
+    bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
 
     if (zoomUpdated)
     {
@@ -87,6 +90,7 @@ void ofApp::draw()
 //--------------------------------------------------------------
 void ofApp::exit()
 {
+    loader.stop();
 }
 
 //--------------------------------------------------------------
@@ -178,13 +182,8 @@ void ofApp::loadVisibleTiles()
 
         if (!tileCache.contains(key))
         {
-            ofImage tile;
-            if (!tile.load(key.filepath))
-            {
-                ofLogNotice("failed to load " + key.filepath);
-                continue;
-            }
-            tileCache.put(key, tile.getTexture());
+            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                               { tileCache.put(key, tile.getTexture()); });
         }
 
         if (!tileKeys.count(key))

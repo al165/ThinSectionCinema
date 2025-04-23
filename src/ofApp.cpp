@@ -184,7 +184,7 @@ void ofApp::loadVisibleTiles()
                 ofLogNotice("failed to load " + key.filepath);
                 continue;
             }
-            tileCache.put(key, tile);
+            tileCache.put(key, tile.getTexture());
         }
 
         if (!tileKeys.count(key))
@@ -212,7 +212,7 @@ void ofApp::drawTiles()
 
     int zoom = std::floor(std::powf(2.f, currentZoomLevel));
 
-    ofImage tile;
+    ofTexture tile;
     for (const TileKey &key : tileKeys)
     {
         if (key.zoom != zoom)

@@ -52,7 +52,7 @@ public:
 		return cache.find(key) != cache.end();
 	}
 
-	bool get(const TileKey &key, ofImage &outImg)
+	bool get(const TileKey &key, ofTexture &outImg)
 	{
 		auto it = cache.find(key);
 		if (it == cache.end())
@@ -63,7 +63,7 @@ public:
 		return true;
 	}
 
-	void put(const TileKey &key, const ofImage &img)
+	void put(const TileKey &key, const ofTexture &img)
 	{
 		auto it = cache.find(key);
 		if (it != cache.end())
@@ -91,7 +91,7 @@ public:
 private:
 	size_t maxSize;
 	std::list<TileKey> usage;
-	std::unordered_map<TileKey, std::pair<ofImage, std::list<TileKey>::iterator>> cache;
+	std::unordered_map<TileKey, std::pair<ofTexture, std::list<TileKey>::iterator>> cache;
 };
 
 class ofApp : public ofBaseApp

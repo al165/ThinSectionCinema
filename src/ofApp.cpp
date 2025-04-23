@@ -70,28 +70,31 @@ void ofApp::draw()
     while (fpsHistory.size() > historyLength)
         fpsHistory.pop_front();
 
-    ofDrawBitmapStringHighlight("Frame delta (ms): " + ofToString(delta), 0, 20);
-    const int graphHeight = 40;
-    const int graphWidth = 120;
-    ofSetColor(0, 200);
-    ofFill();
-    ofDrawRectangle(0, 20, graphWidth, graphHeight);
-    ofSetColor(255);
-    ofNoFill();
-    ofDrawRectangle(0, 20, graphWidth, graphHeight);
-
-    ofBeginShape();
-    for (size_t i = 0; i < fpsHistory.size(); i++)
+    if (showDebug)
     {
-        ofVertex(
-            ofMap(i, 0, historyLength, 0, graphWidth),
-            ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
-    }
-    ofEndShape();
+        ofDrawBitmapStringHighlight("Frame delta (ms): " + ofToString(delta), 0, 20);
+        const int graphHeight = 40;
+        const int graphWidth = 120;
+        ofSetColor(0, 200);
+        ofFill();
+        ofDrawRectangle(0, 20, graphWidth, graphHeight);
+        ofSetColor(255);
+        ofNoFill();
+        ofDrawRectangle(0, 20, graphWidth, graphHeight);
 
-    std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale) + ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
-    status += "\nOffset: " + ofToString(offset);
-    ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
+        ofBeginShape();
+        for (size_t i = 0; i < fpsHistory.size(); i++)
+        {
+            ofVertex(
+                ofMap(i, 0, historyLength, 0, graphWidth),
+                ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
+        }
+        ofEndShape();
+
+        std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale) + ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
+        status += "\nOffset: " + ofToString(offset);
+        ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
+    }
 
     fpsCounter.newFrame();
 }
@@ -105,10 +108,8 @@ void ofApp::exit()
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key)
 {
-    // if (key == OF_KEY_UP && currentZoom < maxZoom)
-    //     currentZoom += 0.1f;
-    // if (key == OF_KEY_DOWN && currentZoom > minZoom)
-    //     currentZoom -= 0.1f;
+    if (key == 'd')
+        showDebug = !showDebug;
 }
 
 //--------------------------------------------------------------
@@ -315,8 +316,12 @@ void ofApp::drawTiles()
             tile.draw(key.x, key.y);
             numberVisibleTiles++;
         }
-        ofSetColor(255, 0, 0);
-        ofDrawRectangle(key.x, key.y, key.width, key.height);
+
+        if (showDebug)
+        {
+            ofSetColor(255, 0, 0);
+            ofDrawRectangle(key.x, key.y, key.width, key.height);
+        }
     }
 }
 

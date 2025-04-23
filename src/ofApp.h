@@ -114,6 +114,7 @@ public:
 	void windowResized(int w, int h);
 	void dragEvent(ofDragInfo dragInfo);
 
+	bool showDebug = false;
 	ofFpsCounter fpsCounter = ofFpsCounter();
 	std::deque<float> fpsHistory;
 	size_t historyLength = 128;

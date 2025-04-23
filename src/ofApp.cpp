@@ -11,6 +11,8 @@ void ofApp::setup()
     tiles.listDir();
 
     loadTileList();
+
+    ofResetElapsedTimeCounter();
 }
 
 //--------------------------------------------------------------
@@ -41,15 +43,39 @@ void ofApp::update()
 //--------------------------------------------------------------
 void ofApp::draw()
 {
+    float elapsedTime = ofGetElapsedTimef();
+    float delta = 1000.f * (elapsedTime - lastFrameTime);
+    lastFrameTime = elapsedTime;
+
     ofBackground(0);
     ofPushMatrix();
-    ofTranslate(ofGetWidth() / 2, ofGetHeight() / 2);
     ofScale(scale);
     ofTranslate(offset);
     drawTiles();
     ofPopMatrix();
 
-    ofDrawBitmapStringHighlight("FPS: " + ofToString(ofGetFrameRate()), 0, 20);
+    fpsHistory.push_back(delta);
+    while (fpsHistory.size() > historyLength)
+        fpsHistory.pop_front();
+
+    ofDrawBitmapStringHighlight("Frame delta (ms): " + ofToString(delta), 0, 20);
+    const int graphHeight = 40;
+    const int graphWidth = 120;
+    ofSetColor(0, 200);
+    ofFill();
+    ofDrawRectangle(0, 20, graphWidth, graphHeight);
+    ofSetColor(255);
+    ofNoFill();
+    ofDrawRectangle(0, 20, graphWidth, graphHeight);
+
+    ofBeginShape();
+    for (size_t i = 0; i < fpsHistory.size(); i++)
+    {
+        ofVertex(
+            ofMap(i, 0, historyLength, 0, graphWidth),
+            ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
+    }
+    ofEndShape();
 
     std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale) + ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
     status += "\nOffset: " + ofToString(offset);

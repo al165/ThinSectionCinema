@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <list>
+#include <deque>
 
 #include "ofMain.h"
 #include "SmoothValue.h"
@@ -113,6 +114,9 @@ public:
 	void dragEvent(ofDragInfo dragInfo);
 
 	ofFpsCounter fpsCounter = ofFpsCounter();
+	std::deque<float> fpsHistory;
+	size_t historyLength = 128;
+	float lastFrameTime;
 
 	ofDirectory tiles;
 

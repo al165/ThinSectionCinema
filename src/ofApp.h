@@ -16,15 +16,39 @@ struct TileKey
 	int y;
 	int width;
 	int height;
+	int theta;
 	std::string filepath;
 
-	TileKey(int z, int xx, int yy, int w, int h, std::string path) : zoom(z), x(xx), y(yy), width(w), height(h), filepath(std::move(path)) {}
+	TileKey(int z, int xx, int yy, int w, int h, int t, std::string path) : zoom(z),
+																			x(xx), y(yy),
+																			width(w), height(h),
+																			theta(t),
+																			filepath(std::move(path)) {}
 
 	bool operator==(const TileKey &other) const
 	{
 		return zoom == other.zoom && x == other.x && y == other.y && width == other.width && height == other.height;
 	}
 };
+
+struct View
+{
+	float x;
+	float y;
+	float width;
+	float height;
+	float zoomLevel;
+	float scale;
+	float rotation; // view rotation
+	float theta;	// polarisation
+};
+
+template <class T>
+inline void hash_combine(std::size_t &seed, const T &v)
+{
+	std::hash<T> hasher;
+	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
 
 namespace std
 {
@@ -36,9 +60,12 @@ namespace std
 			size_t h1 = std::hash<int>()(k.zoom);
 			size_t h2 = std::hash<int>()(k.x);
 			size_t h3 = std::hash<int>()(k.y);
-			size_t h4 = std::hash<int>()(k.width);
-			size_t h5 = std::hash<int>()(k.height);
-			return (((((h1 ^ (h2 << 1)) >> 1) ^ (h3 << 1)) >> 1) ^ (h4 << 1)) ^ (h5 << 1);
+			size_t h4 = std::hash<int>()(k.theta);
+			size_t hash = h1;
+			hash_combine(hash, h2);
+			hash_combine(hash, h3);
+			hash_combine(hash, h4);
+			return hash;
 		}
 	};
 }
@@ -47,6 +74,10 @@ class TileCacheLRU
 {
 public:
 	TileCacheLRU(size_t maxSize) : maxSize(maxSize) {}
+
+	using CacheMap = std::unordered_map<TileKey, std::pair<ofTexture, std::list<TileKey>::iterator>>;
+	using const_iterator = CacheMap::const_iterator;
+	using iterator = CacheMap::iterator;
 
 	bool contains(const TileKey &key)
 	{
@@ -62,6 +93,11 @@ public:
 		usage.splice(usage.begin(), usage, it->second.second);
 		outImg = it->second.first;
 		return true;
+	}
+
+	void touch(iterator it)
+	{
+		usage.splice(usage.begin(), usage, it->second.second);
 	}
 
 	void put(const TileKey &key, const ofTexture &img)
@@ -88,6 +124,11 @@ public:
 	{
 		return cache.size();
 	}
+
+	iterator begin() { return cache.begin(); }
+	iterator end() { return cache.end(); }
+	const_iterator begin() const { return cache.begin(); }
+	const_iterator end() const { return cache.end(); }
 
 private:
 	size_t maxSize;
@@ -122,6 +163,7 @@ public:
 
 	ofDirectory tiles;
 	AsyncTextureLoader loader;
+	View currentView;
 
 	const float maxZoom = 1.f;
 	const float minZoom = 8.f;
@@ -136,15 +178,18 @@ public:
 	ofVec2f lastOffset;
 	ofVec2f mouseStart;
 	ofVec2f tileSize = {520, 384};
+	float theta;
+	std::vector<int> thetaLevels = {0, 18, 36, 54, 72, 90, 108, 126, 144, 162};
+	size_t thetaIndex = 0;
 
 	TileCacheLRU tileCache{300};
-	std::unordered_set<TileKey> tileKeys;
+	// std::unordered_set<TileKey> tileKeys;
 
 	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;
 	int numberVisibleTiles = 0;
 
 	void loadTileList();
-	void loadVisibleTiles();
+	void loadVisibleTiles(const View &view);
 	void preloadZoomIn();
 	void preloadZoomOut();
 	void drawTiles();

@@ -10,9 +10,15 @@ void ofApp::setup()
     tiles.allowExt("jpg");
     tiles.listDir();
 
+    currentView.x = offset.x;
+    currentView.y = offset.y;
+    currentView.zoomLevel = currentZoom.getValue();
+    currentView.width = ofGetWidth();
+    currentView.height = ofGetHeight();
+
     loader.start();
     loadTileList();
-    loadVisibleTiles();
+    loadVisibleTiles(currentView);
     preloadZoomIn();
 
     ofResetElapsedTimeCounter();
@@ -32,6 +38,8 @@ void ofApp::update()
         currentZoomLevel = std::clamp(currentZoomLevel, maxZoomLevel, minZoomLevel);
 
         scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+        currentView.width = ofGetWidth() / scale;
+        currentView.height = ofGetWidth() / scale;
 
         if (currentZoomLevel != lastZoomLevel)
         {
@@ -40,7 +48,7 @@ void ofApp::update()
             lastZoomLevel = currentZoomLevel;
         }
 
-        loadVisibleTiles();
+        loadVisibleTiles(currentView);
 
         bool zoomingIn = (prevZoom > currentZoom.getValue());
         if (scale > 0.8f && zoomingIn)
@@ -91,7 +99,8 @@ void ofApp::draw()
         }
         ofEndShape();
 
-        std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale) + ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
+        std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale) + ", theta: " + ofToString(theta) + ", thetaIndex: " + ofToString(thetaIndex);
+        status += ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
         status += "\nOffset: " + ofToString(offset);
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
     }
@@ -108,8 +117,25 @@ void ofApp::exit()
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key)
 {
+    if (key == OF_KEY_LEFT)
+        theta = std::fmodf(theta + 180.f - 1.f, 180.f);
+    else if (key == OF_KEY_RIGHT)
+        theta = std::fmodf(theta + 1.f, 180.f);
     if (key == 'd')
         showDebug = !showDebug;
+
+    // compute theta index
+    int lastThetaIndex = thetaIndex;
+    thetaIndex = 0;
+    for (size_t i = 0; i < thetaLevels.size(); i++)
+    {
+        if (thetaLevels[i] > theta)
+            break;
+        thetaIndex = i;
+    }
+
+    if (thetaIndex != lastThetaIndex)
+        loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
@@ -128,13 +154,12 @@ void ofApp::mouseDragged(int x, int y, int button)
     // ofLogNotice("ofApp::mouseDragged " + ofToString(x) + ", " + ofToString(y));
     ofVec2f mouse(x, y);
     offset = lastOffset - (mouseStart - mouse);
-    loadVisibleTiles();
+    loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
-    ofLogNotice("ofApp::mousePressed");
     mouseStart = ofVec2f(x, y);
     lastOffset = offset;
 }
@@ -153,7 +178,9 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 //--------------------------------------------------------------
 void ofApp::windowResized(int w, int h)
 {
-    loadVisibleTiles();
+    currentView.width = w / scale;
+    currentView.height = h / scale;
+    loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
@@ -162,43 +189,40 @@ void ofApp::dragEvent(ofDragInfo dragInfo)
 }
 
 //--------------------------------------------------------------
-void ofApp::loadVisibleTiles()
+void ofApp::loadVisibleTiles(const View &view)
 {
-    const int windowWidth = ofGetWidth() / scale;
-    const int windowHeight = ofGetHeight() / scale;
-
     static int lastZoomLoaded = -1;
 
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
-    if (lastZoomLoaded != zoom)
-        tileKeys.clear();
+    // preload thetas CW and CCW from current
+    int t = thetaLevels[thetaIndex];
+    int tCW = thetaLevels[(thetaIndex + 1) % thetaLevels.size()];
+    int tCCW = thetaLevels[(thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
 
     // add an additional margin to preload tiles offscreen
     const int left = -offset.x - 520;
-    const int right = -offset.x + windowWidth + 520;
+    const int right = -offset.x + view.width + 520;
     const int top = -offset.y - 384;
-    const int bottom = -offset.y + windowHeight + 384;
+    const int bottom = -offset.y + view.height + 384;
 
-    // TODO: reduce this to only neighbouring tiles
     for (const TileKey &key : avaliableTiles[zoom])
     {
         if (key.x >= right || key.x + key.width <= left ||
-            key.y >= bottom || key.y + key.height <= top)
+            key.y >= bottom || key.y + key.height <= top ||
+            key.zoom != zoom)
         {
-            if (tileKeys.count(key))
-                tileKeys.erase(key);
             continue;
         }
+
+        if (key.theta != t && key.theta != tCW && key.theta != tCCW)
+            continue;
 
         if (!tileCache.contains(key))
         {
             loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
                                { tileCache.put(key, tile.getTexture()); });
         }
-
-        if (!tileKeys.count(key))
-            tileKeys.insert(key);
     }
 
     lastZoomLoaded = zoom;
@@ -207,6 +231,8 @@ void ofApp::loadVisibleTiles()
 void ofApp::preloadZoomIn()
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    int t = thetaLevels[thetaIndex];
+
     static int lastNextZoom = -1;
     if (zoom <= 1)
         return;
@@ -230,7 +256,8 @@ void ofApp::preloadZoomIn()
     for (const TileKey &key : avaliableTiles[zoomNext])
     {
         if (key.x / 2 >= right || (key.x + key.width) / 2 <= left ||
-            key.y / 2 >= bottom || (key.y + key.height) / 2 <= top)
+            key.y / 2 >= bottom || (key.y + key.height) / 2 <= top ||
+            key.theta != t)
         {
             continue;
         }
@@ -246,6 +273,8 @@ void ofApp::preloadZoomIn()
 void ofApp::preloadZoomOut()
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    int t = thetaLevels[thetaIndex];
+
     static int lastNextZoom = -1;
     if (zoom >= 32)
         return;
@@ -269,7 +298,8 @@ void ofApp::preloadZoomOut()
     for (const TileKey &key : avaliableTiles[zoomNext])
     {
         if (key.x * 2 >= right || (key.x + key.width) * 2 <= left ||
-            key.y * 2 >= bottom || (key.y + key.height) * 2 <= top)
+            key.y * 2 >= bottom || (key.y + key.height) * 2 <= top ||
+            key.theta != t)
         {
             continue;
         }
@@ -299,23 +329,25 @@ void ofApp::drawTiles()
     ofSetLineWidth(1.0);
 
     int zoom = std::floor(std::powf(2.f, currentZoomLevel));
+    int t = thetaLevels[thetaIndex];
 
-    ofTexture tile;
-    for (const TileKey &key : tileKeys)
+    for (auto it = tileCache.begin(); it != tileCache.end(); ++it)
     {
-        if (key.zoom != zoom)
+        const TileKey &key = it->first;
+        const ofTexture &tile = it->second.first;
+
+        if (key.zoom != zoom || key.theta != t)
             continue;
 
         if (key.x >= right || key.x + key.width <= left ||
             key.y >= bottom || key.y + key.height <= top)
             continue;
 
-        if (tileCache.get(key, tile))
-        {
-            ofSetColor(255);
-            tile.draw(key.x, key.y);
-            numberVisibleTiles++;
-        }
+        ofSetColor(255);
+        tile.draw(key.x, key.y);
+        tileCache.touch(it);
+
+        numberVisibleTiles++;
 
         if (showDebug)
         {
@@ -332,6 +364,25 @@ void ofApp::loadTileList()
     tileDir.listDir();
     auto zoomLevelsDirs = tileDir.getFiles();
 
+    // get list of theta levels (as ints)
+    auto rotations = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
+    auto rotationDirs = rotations.getFiles();
+    thetaLevels.clear();
+    for (const ofFile &thetaDir : rotationDirs)
+    {
+        if (!thetaDir.isDirectory())
+            continue;
+
+        int theta = ofToInt(thetaDir.getFileName());
+        thetaLevels.push_back(theta);
+    }
+
+    std::sort(thetaLevels.begin(), thetaLevels.end());
+    ofLogNotice("- Theta levels:");
+    for (const int t : thetaLevels)
+        ofLogNotice("   " + ofToString(t));
+
+    // Get all the tiles
     for (const ofFile &zoomDir : zoomLevelsDirs)
     {
         if (!zoomDir.isDirectory())
@@ -341,7 +392,7 @@ void ofApp::loadTileList()
 
         ofLogNotice("- Zoom level: " + ofToString(zoom));
 
-        tiles = ofDirectory("/home/arran/Desktop/04_47/" + ofToString(zoom) + ".0/0.0/");
+        tiles = ofDirectory(tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/0.0/");
         tiles.allowExt("jpg");
         tiles.listDir();
 
@@ -361,7 +412,11 @@ void ofApp::loadTileList()
             int width = ofToInt(components[2]);
             int height = ofToInt(components[3]);
 
-            tiles.emplace_back(zoom, x, y, width, height, tileFiles[i].getAbsolutePath());
+            for (const int t : thetaLevels)
+            {
+                std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
+                tiles.emplace_back(zoom, x, y, width, height, t, filepath);
+            }
         }
 
         avaliableTiles[zoom] = tiles;

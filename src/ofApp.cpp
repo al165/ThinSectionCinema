@@ -6,6 +6,26 @@ void ofApp::setup()
     ofSetWindowTitle("Tile Viewer");
     ofSetVerticalSync(true);
 
+    // Setup shader stuff
+    ofEnableAlphaBlending();
+    int fboW = ofGetWidth();
+    int fboH = ofGetHeight();
+    fboA.allocate(fboW, fboH, GL_RGBA);
+    fboB.allocate(fboW, fboH, GL_RGBA);
+    fboFinal.allocate(fboW, fboH, GL_RGBA);
+
+    if (!blendShader.load("blend"))
+        ofLogError() << "Shader not loaded!";
+    else
+        ofLogNotice() << "Shader loaded successfully";
+
+    plane.set(ofGetWidth(), ofGetHeight());
+    plane.setScale(1, -1, 1);
+    plane.setPosition(0, ofGetHeight(), 0);
+    plane.mapTexCoords(0, 0, ofGetWidth(), ofGetHeight());
+
+    ofLogNotice() << "plane size: " << plane.getWidth() << ", " << plane.getHeight();
+
     tiles = ofDirectory("/home/arran/Desktop/04_47/32.0/0.0/");
     tiles.allowExt("jpg");
     tiles.listDir();
@@ -67,12 +87,21 @@ void ofApp::draw()
     float delta = 1000.f * (elapsedTime - lastFrameTime);
     lastFrameTime = elapsedTime;
 
-    ofBackground(0);
-    ofPushMatrix();
-    ofScale(scale);
-    ofTranslate(offset);
+    ofBackground(0, 0, 255);
     drawTiles();
-    ofPopMatrix();
+
+    fboFinal.begin();
+    ofClear(0);
+    blendShader.begin();
+    // blendShader.bindDefaults();
+    blendShader.setUniformTexture("texA", fboA.getTexture(), 1);
+    blendShader.setUniformTexture("texB", fboB.getTexture(), 2);
+    blendShader.setUniform1f("alpha", blendAlpha);
+    plane.draw();
+    blendShader.end();
+    fboFinal.end();
+
+    fboFinal.draw(0, 0);
 
     fpsHistory.push_back(delta);
     while (fpsHistory.size() > historyLength)
@@ -99,7 +128,8 @@ void ofApp::draw()
         }
         ofEndShape();
 
-        std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale) + ", theta: " + ofToString(theta) + ", thetaIndex: " + ofToString(thetaIndex);
+        std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale);
+        status += ", theta: " + ofToString(theta) + ", thetaIndex: " + ofToString(thetaIndex) + ", blendAlpha: " + ofToString(blendAlpha);
         status += ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
         status += "\nOffset: " + ofToString(offset);
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
@@ -136,6 +166,16 @@ void ofApp::keyPressed(int key)
 
     if (thetaIndex != lastThetaIndex)
         loadVisibleTiles(currentView);
+
+    // compute alpha blend
+    int t1 = thetaLevels[thetaIndex];
+    int t2;
+    if (thetaIndex == thetaLevels.size() - 1)
+        t2 = thetaLevels[0] + 180;
+    else
+        t2 = thetaLevels[thetaIndex + 1];
+
+    blendAlpha = ofMap(theta, (float)t1, (float)(t2), 0.f, 1.f);
 }
 
 //--------------------------------------------------------------
@@ -180,6 +220,15 @@ void ofApp::windowResized(int w, int h)
 {
     currentView.width = w / scale;
     currentView.height = h / scale;
+
+    fboA.allocate(w, h, GL_RGBA);
+    fboB.allocate(w, h, GL_RGBA);
+    fboFinal.allocate(w, h, GL_RGBA);
+
+    plane.set(ofGetWidth(), ofGetHeight());
+    plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
+    plane.mapTexCoordsFromTexture(fboFinal.getTexture());
+
     loadVisibleTiles(currentView);
 }
 
@@ -328,32 +377,71 @@ void ofApp::drawTiles()
     ofSetColor(255);
     ofSetLineWidth(1.0);
 
+    fboA.begin();
+    ofBackground(0);
+    fboA.end();
+
+    fboB.begin();
+    ofBackground(0);
+    fboB.end();
+
     int zoom = std::floor(std::powf(2.f, currentZoomLevel));
-    int t = thetaLevels[thetaIndex];
+    int t1 = thetaLevels[thetaIndex];
+    int t2 = thetaLevels[(thetaIndex + 1) % thetaLevels.size()];
 
     for (auto it = tileCache.begin(); it != tileCache.end(); ++it)
     {
         const TileKey &key = it->first;
         const ofTexture &tile = it->second.first;
 
-        if (key.zoom != zoom || key.theta != t)
+        if (key.zoom != zoom)
             continue;
 
         if (key.x >= right || key.x + key.width <= left ||
             key.y >= bottom || key.y + key.height <= top)
             continue;
 
-        ofSetColor(255);
-        tile.draw(key.x, key.y);
-        tileCache.touch(it);
+        // draw thetas on different fbos
+        if (key.theta == t1)
+        {
+            fboA.begin();
+            ofPushMatrix();
+            ofScale(scale);
+            ofTranslate(offset);
+            ofSetColor(255);
+            tile.draw(key.x, key.y);
+            if (showDebug)
+            {
+                ofSetColor(255, 0, 0);
+                ofDrawRectangle(key.x, key.y, key.width, key.height);
+            }
+            ofPopMatrix();
+            fboA.end();
+
+            tileCache.touch(it);
+        }
+        else if (key.theta == t2)
+        {
+            fboB.begin();
+            ofPushMatrix();
+            ofScale(scale);
+            ofTranslate(offset);
+            ofSetColor(255);
+            tile.draw(key.x, key.y);
+            if (showDebug)
+            {
+                ofSetColor(255, 0, 0);
+                ofDrawRectangle(key.x, key.y, key.width, key.height);
+            }
+            ofPopMatrix();
+            fboB.end();
+
+            tileCache.touch(it);
+        }
+        else
+            continue;
 
         numberVisibleTiles++;
-
-        if (showDebug)
-        {
-            ofSetColor(255, 0, 0);
-            ofDrawRectangle(key.x, key.y, key.width, key.height);
-        }
     }
 }
 

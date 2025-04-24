@@ -155,6 +155,11 @@ public:
 	void windowResized(int w, int h);
 	void dragEvent(ofDragInfo dragInfo);
 
+	ofFbo fboA, fboB, fboFinal;
+	ofShader blendShader;
+	float blendAlpha;
+	ofPlanePrimitive plane;
+
 	bool showDebug = false;
 	ofFpsCounter fpsCounter = ofFpsCounter();
 	std::deque<float> fpsHistory;
@@ -183,7 +188,6 @@ public:
 	size_t thetaIndex = 0;
 
 	TileCacheLRU tileCache{300};
-	// std::unordered_set<TileKey> tileKeys;
 
 	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;
 	int numberVisibleTiles = 0;

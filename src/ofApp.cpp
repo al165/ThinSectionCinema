@@ -24,22 +24,22 @@ void ofApp::setup()
     plane.setPosition(0, ofGetHeight(), 0);
     plane.mapTexCoords(0, 0, ofGetWidth(), ofGetHeight());
 
-    ofLogNotice() << "plane size: " << plane.getWidth() << ", " << plane.getHeight();
-
     tiles = ofDirectory("/home/arran/Desktop/04_47/32.0/0.0/");
     tiles.allowExt("jpg");
     tiles.listDir();
 
-    currentView.x = offset.x;
-    currentView.y = offset.y;
     currentView.zoomLevel = currentZoom.getValue();
     currentView.width = ofGetWidth();
     currentView.height = ofGetHeight();
 
+    zoomCenter = {ofGetWidth() / 2, ofGetHeight() / 2};
+
     loader.start();
     loadTileList();
     loadVisibleTiles(currentView);
-    preloadZoomIn();
+    preloadZoom(currentZoomLevel - 1);
+    preloadZoom(currentZoomLevel - 2);
+    updateCaches();
 
     ofResetElapsedTimeCounter();
 }
@@ -47,35 +47,61 @@ void ofApp::setup()
 //--------------------------------------------------------------
 void ofApp::update()
 {
-    loader.dispatchMainCallbacks(12);
+    loader.dispatchMainCallbacks(32);
 
     float prevZoom = currentZoom.getValue();
     bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
+
+    bool shouldLoadZoomIn = false;
+    bool shouldLoadZoomOut = false;
+    bool shouldLoadPan = false;
 
     if (zoomUpdated)
     {
         currentZoomLevel = std::floor(currentZoom.getValue());
         currentZoomLevel = std::clamp(currentZoomLevel, maxZoomLevel, minZoomLevel);
 
-        scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
-        currentView.width = ofGetWidth() / scale;
-        currentView.height = ofGetWidth() / scale;
+        currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+        currentView.width = ofGetWidth() / currentView.scale;
+        currentView.height = ofGetWidth() / currentView.scale;
+        currentView.scale = currentView.scale;
+        currentView.zoomLevel = currentZoomLevel;
 
         if (currentZoomLevel != lastZoomLevel)
         {
             float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
-            offset *= multiplier;
+            currentView.offset *= multiplier;
+            zoomCenter *= multiplier;
             lastZoomLevel = currentZoomLevel;
         }
 
+        bool zoomingIn = (prevZoom > currentZoom.getValue());
+        if (currentView.scale > 0.8f && zoomingIn)
+            shouldLoadZoomIn = true;
+        else if (currentView.scale < 0.7f && !zoomingIn)
+            shouldLoadZoomOut = true;
+
+        shouldLoadPan = true;
+    }
+
+    if (hasPanned)
+    {
+        hasPanned = false;
+        shouldLoadZoomIn = true;
+        shouldLoadZoomOut = true;
+        shouldLoadPan = true;
+    }
+
+    if (shouldLoadZoomOut)
+        preloadZoom(currentZoomLevel + 1);
+
+    if (shouldLoadZoomIn)
+        preloadZoom(currentZoomLevel - 1);
+
+    if (shouldLoadPan)
         loadVisibleTiles(currentView);
 
-        bool zoomingIn = (prevZoom > currentZoom.getValue());
-        if (scale > 0.8f && zoomingIn)
-            preloadZoomIn();
-        else if (scale < 0.7f && !zoomingIn)
-            preloadZoomOut();
-    }
+    updateCaches();
 
     fpsCounter.update();
 }
@@ -93,7 +119,6 @@ void ofApp::draw()
     fboFinal.begin();
     ofClear(0);
     blendShader.begin();
-    // blendShader.bindDefaults();
     blendShader.setUniformTexture("texA", fboA.getTexture(), 1);
     blendShader.setUniformTexture("texB", fboB.getTexture(), 2);
     blendShader.setUniform1f("alpha", blendAlpha);
@@ -128,10 +153,10 @@ void ofApp::draw()
         }
         ofEndShape();
 
-        std::string status = "Zoom: " + ofToString(currentZoom.getValue()) + ", Zoom level: " + ofToString(currentZoomLevel) + ", Scale: " + ofToString(scale);
-        status += ", theta: " + ofToString(theta) + ", thetaIndex: " + ofToString(thetaIndex) + ", blendAlpha: " + ofToString(blendAlpha);
-        status += ", Cache: " + ofToString(tileCache.size()) + ", Visible tiles: " + ofToString(numberVisibleTiles);
-        status += "\nOffset: " + ofToString(offset);
+        std::string status = std::format(
+            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {})",
+            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses);
+
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
     }
 
@@ -148,34 +173,34 @@ void ofApp::exit()
 void ofApp::keyPressed(int key)
 {
     if (key == OF_KEY_LEFT)
-        theta = std::fmodf(theta + 180.f - 1.f, 180.f);
+        currentView.theta = std::fmodf(currentView.theta + 180.f - 0.5f, 180.f);
     else if (key == OF_KEY_RIGHT)
-        theta = std::fmodf(theta + 1.f, 180.f);
+        currentView.theta = std::fmodf(currentView.theta + 0.5f, 180.f);
     if (key == 'd')
         showDebug = !showDebug;
 
     // compute theta index
-    int lastThetaIndex = thetaIndex;
-    thetaIndex = 0;
+    int lastThetaIndex = currentView.thetaIndex;
+    currentView.thetaIndex = 0;
     for (size_t i = 0; i < thetaLevels.size(); i++)
     {
-        if (thetaLevels[i] > theta)
+        if (thetaLevels[i] > currentView.theta)
             break;
-        thetaIndex = i;
+        currentView.thetaIndex = i;
     }
 
-    if (thetaIndex != lastThetaIndex)
+    if (currentView.thetaIndex != lastThetaIndex)
         loadVisibleTiles(currentView);
 
     // compute alpha blend
-    int t1 = thetaLevels[thetaIndex];
+    int t1 = thetaLevels[currentView.thetaIndex];
     int t2;
-    if (thetaIndex == thetaLevels.size() - 1)
+    if (currentView.thetaIndex == thetaLevels.size() - 1)
         t2 = thetaLevels[0] + 180;
     else
-        t2 = thetaLevels[thetaIndex + 1];
+        t2 = thetaLevels[currentView.thetaIndex + 1];
 
-    blendAlpha = ofMap(theta, (float)t1, (float)(t2), 0.f, 1.f);
+    blendAlpha = ofMap(currentView.theta, (float)t1, (float)(t2), 0.f, 1.f);
 }
 
 //--------------------------------------------------------------
@@ -191,17 +216,17 @@ void ofApp::mouseMoved(int x, int y)
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button)
 {
-    // ofLogNotice("ofApp::mouseDragged " + ofToString(x) + ", " + ofToString(y));
     ofVec2f mouse(x, y);
-    offset = lastOffset - (mouseStart - mouse);
-    loadVisibleTiles(currentView);
+    currentView.offset = lastOffset - (mouseStart - mouse);
+    hasPanned = true;
+    // loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
     mouseStart = ofVec2f(x, y);
-    lastOffset = offset;
+    lastOffset = currentView.offset;
 }
 
 //--------------------------------------------------------------
@@ -218,8 +243,8 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 //--------------------------------------------------------------
 void ofApp::windowResized(int w, int h)
 {
-    currentView.width = w / scale;
-    currentView.height = h / scale;
+    currentView.width = w / currentView.scale;
+    currentView.height = h / currentView.scale;
 
     fboA.allocate(w, h, GL_RGBA);
     fboB.allocate(w, h, GL_RGBA);
@@ -238,138 +263,159 @@ void ofApp::dragEvent(ofDragInfo dragInfo)
 }
 
 //--------------------------------------------------------------
+void ofApp::updateCaches()
+{
+    const int windowWidth = ofGetWidth() / currentView.scale;
+    const int windowHeight = ofGetHeight() / currentView.scale;
+
+    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+
+    const int left = -currentView.offset.x - windowWidth * 0.2f;
+    const int right = -currentView.offset.x + windowWidth * 1.2f;
+    const int top = -currentView.offset.y - windowHeight * 0.2f;
+    const int bottom = -currentView.offset.y + windowHeight * 1.2f;
+
+    int t1 = thetaLevels[currentView.thetaIndex];
+    int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
+
+    // 1. Demote from MAIN
+    for (auto it = cacheMain.begin(); it != cacheMain.end();)
+    {
+        TileKey key = it->first;
+
+        if (
+            (key.zoom != zoom) ||
+            (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top) ||
+            (key.theta != t1 && key.theta != t2))
+        {
+            cacheSecondary.put(key, it->second);
+            it = cacheMain.erase(it);
+        }
+        else
+            ++it;
+    }
+
+    // 2. Check which tiles are needed
+    for (const TileKey &key : avaliableTiles[zoom])
+    {
+        if (key.x >= right || key.x + key.width <= left ||
+            key.y >= bottom || key.y + key.height <= top)
+            continue;
+
+        if (key.theta != t1 && key.theta != t2)
+            continue;
+
+        // tile is needed, make sure it is in cacheMain
+        if (!cacheMain.count(key))
+        {
+            // not in cacheMain, check secondary
+
+            ofTexture tile;
+            if (cacheSecondary.get(key, tile))
+            {
+                // promote to main
+                cacheMain[key] = tile;
+                cacheSecondary.erase(key);
+            }
+            else
+            {
+                // ofLogWarning("Cache miss");
+                cacheMisses++;
+                loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                                   { cacheMain[key] = tile.getTexture(); });
+            }
+        }
+    }
+}
+
+//--------------------------------------------------------------
 void ofApp::loadVisibleTiles(const View &view)
 {
-    static int lastZoomLoaded = -1;
+    const int windowWidth = ofGetWidth() / view.scale;
+    const int windowHeight = ofGetHeight() / view.scale;
 
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
     // preload thetas CW and CCW from current
-    int t = thetaLevels[thetaIndex];
-    int tCW = thetaLevels[(thetaIndex + 1) % thetaLevels.size()];
-    int tCCW = thetaLevels[(thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
+    int t = thetaLevels[view.thetaIndex];
+    int tCW1 = thetaLevels[(view.thetaIndex + 1) % thetaLevels.size()];
+    int tCW2 = thetaLevels[(view.thetaIndex + 2) % thetaLevels.size()];
+    int tCCW1 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
+    int tCCW2 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 2) % thetaLevels.size()];
 
     // add an additional margin to preload tiles offscreen
-    const int left = -offset.x - 520;
-    const int right = -offset.x + view.width + 520;
-    const int top = -offset.y - 384;
-    const int bottom = -offset.y + view.height + 384;
+    const int left = -view.offset.x - windowWidth * 0.5f;
+    const int right = -view.offset.x + windowWidth * 1.5f;
+    const int top = -view.offset.y - windowHeight * 0.5f;
+    const int bottom = -view.offset.y + windowHeight * 1.5f;
 
     for (const TileKey &key : avaliableTiles[zoom])
     {
         if (key.x >= right || key.x + key.width <= left ||
-            key.y >= bottom || key.y + key.height <= top ||
-            key.zoom != zoom)
-        {
-            continue;
-        }
-
-        if (key.theta != t && key.theta != tCW && key.theta != tCCW)
+            key.y >= bottom || key.y + key.height <= top)
             continue;
 
-        if (!tileCache.contains(key))
-        {
+        if (key.theta != t && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1 && key.theta != tCCW2)
+            continue;
+
+        if (cacheMain.count(key))
+            continue;
+
+        if (!cacheSecondary.contains(key, true))
             loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { tileCache.put(key, tile.getTexture()); });
-        }
-    }
-
-    lastZoomLoaded = zoom;
-}
-
-void ofApp::preloadZoomIn()
-{
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-    int t = thetaLevels[thetaIndex];
-
-    static int lastNextZoom = -1;
-    if (zoom <= 1)
-        return;
-
-    int zoomNext = zoom / 2;
-    if (zoomNext == lastNextZoom)
-        return;
-
-    lastNextZoom = zoomNext;
-    ofLogNotice("ofApp::preloadZoomIn()");
-
-    const int windowWidth = ofGetWidth() / scale;
-    const int windowHeight = ofGetHeight() / scale;
-
-    // add an additional margin to preload tiles offscreen
-    const int left = -offset.x - 520;
-    const int right = -offset.x + windowWidth + 520;
-    const int top = -offset.y - 384;
-    const int bottom = -offset.y + windowHeight + 384;
-
-    for (const TileKey &key : avaliableTiles[zoomNext])
-    {
-        if (key.x / 2 >= right || (key.x + key.width) / 2 <= left ||
-            key.y / 2 >= bottom || (key.y + key.height) / 2 <= top ||
-            key.theta != t)
-        {
-            continue;
-        }
-
-        if (!tileCache.contains(key))
-        {
-            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { tileCache.put(key, tile.getTexture()); });
-        }
+                               { cacheSecondary.put(key, tile.getTexture()); });
     }
 }
 
-void ofApp::preloadZoomOut()
+void ofApp::preloadZoom(int level)
 {
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-    int t = thetaLevels[thetaIndex];
+    ofLogNotice() << "ofApp::preloadZoom level " << level;
 
-    static int lastNextZoom = -1;
-    if (zoom >= 32)
+    if (level < maxZoomLevel || level > minZoomLevel)
         return;
 
-    int zoomNext = zoom * 2;
-    if (zoomNext == lastNextZoom)
-        return;
+    int t = thetaLevels[currentView.thetaIndex];
 
-    lastNextZoom = zoomNext;
-    ofLogNotice("ofApp::preloadZoomOut()");
+    const int windowWidth = ofGetWidth() / currentView.scale;
+    const int windowHeight = ofGetHeight() / currentView.scale;
 
-    const int windowWidth = ofGetWidth() / scale;
-    const int windowHeight = ofGetHeight() / scale;
+    const int left = -currentView.offset.x;
+    const int right = -currentView.offset.x + windowWidth;
+    const int top = -currentView.offset.y;
+    const int bottom = -currentView.offset.y + windowHeight;
 
-    // add an additional margin to preload tiles offscreen
-    const int left = -offset.x - 520;
-    const int right = -offset.x + windowWidth + 520;
-    const int top = -offset.y - 384;
-    const int bottom = -offset.y + windowHeight + 384;
+    int preloadCount = 0;
+    float multiplier = std::powf(2.f, (level - currentZoomLevel));
+    int zoom = static_cast<int>(std::floor(std::powf(2, level)));
 
-    for (const TileKey &key : avaliableTiles[zoomNext])
+    ofLogNotice() << "- multiplier: " << ofToString(multiplier) << ", nextZoom: " << ofToString(zoom);
+
+    for (const TileKey &key : avaliableTiles[zoom])
     {
-        if (key.x * 2 >= right || (key.x + key.width) * 2 <= left ||
-            key.y * 2 >= bottom || (key.y + key.height) * 2 <= top ||
+        if (key.x * multiplier >= right || (key.x + key.width) * multiplier <= left ||
+            key.y * multiplier >= bottom || (key.y + key.height) * multiplier <= top ||
             key.theta != t)
-        {
             continue;
-        }
 
-        if (!tileCache.contains(key))
+        if (!cacheSecondary.contains(key, false))
         {
             loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { tileCache.put(key, tile.getTexture()); });
+                               { cacheSecondary.put(key, tile.getTexture()); });
+            preloadCount++;
         }
     }
+    ofLogNotice() << "- preloaded " << ofToString(preloadCount) << " tiles for next zoom level";
 }
 
 void ofApp::drawTiles()
 {
-    const int windowWidth = ofGetWidth() / scale;
-    const int windowHeight = ofGetHeight() / scale;
+    const int windowWidth = ofGetWidth() / currentView.scale;
+    const int windowHeight = ofGetHeight() / currentView.scale;
 
-    const int left = -offset.x;
-    const int right = -offset.x + windowWidth;
-    const int top = -offset.y;
-    const int bottom = -offset.y + windowHeight;
+    const int left = -currentView.offset.x - zoomOffset.x;
+    const int right = -currentView.offset.x - zoomOffset.x + windowWidth;
+    const int top = -currentView.offset.y - zoomOffset.y;
+    const int bottom = -currentView.offset.y - zoomOffset.y + windowHeight;
 
     numberVisibleTiles = 0;
 
@@ -386,13 +432,13 @@ void ofApp::drawTiles()
     fboB.end();
 
     int zoom = std::floor(std::powf(2.f, currentZoomLevel));
-    int t1 = thetaLevels[thetaIndex];
-    int t2 = thetaLevels[(thetaIndex + 1) % thetaLevels.size()];
+    int t1 = thetaLevels[currentView.thetaIndex];
+    int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
-    for (auto it = tileCache.begin(); it != tileCache.end(); ++it)
+    for (auto it = cacheMain.begin(); it != cacheMain.end(); ++it)
     {
         const TileKey &key = it->first;
-        const ofTexture &tile = it->second.first;
+        const ofTexture &tile = it->second;
 
         if (key.zoom != zoom)
             continue;
@@ -406,8 +452,8 @@ void ofApp::drawTiles()
         {
             fboA.begin();
             ofPushMatrix();
-            ofScale(scale);
-            ofTranslate(offset);
+            ofScale(currentView.scale);
+            ofTranslate(currentView.offset + zoomOffset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug)
@@ -418,25 +464,25 @@ void ofApp::drawTiles()
             ofPopMatrix();
             fboA.end();
 
-            tileCache.touch(it);
+            // cacheSecondary.touch(it);
         }
         else if (key.theta == t2)
         {
             fboB.begin();
             ofPushMatrix();
-            ofScale(scale);
-            ofTranslate(offset);
+            ofScale(currentView.scale);
+            ofTranslate(currentView.offset + zoomOffset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug)
             {
-                ofSetColor(255, 0, 0);
+                ofSetColor(0, 255, 0);
                 ofDrawRectangle(key.x, key.y, key.width, key.height);
             }
             ofPopMatrix();
             fboB.end();
 
-            tileCache.touch(it);
+            // cacheSecondary.touch(it);
         }
         else
             continue;

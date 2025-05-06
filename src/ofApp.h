@@ -1,139 +1,24 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
-#include <list>
 #include <deque>
+#include <unordered_map>
+#include <format>
 
 #include "ofMain.h"
 #include "SmoothValue.h"
+#include "TileCacheLRU.hpp"
 #include "AsyncTextureLoader.hpp"
-
-struct TileKey
-{
-	int zoom;
-	int x;
-	int y;
-	int width;
-	int height;
-	int theta;
-	std::string filepath;
-
-	TileKey(int z, int xx, int yy, int w, int h, int t, std::string path) : zoom(z),
-																			x(xx), y(yy),
-																			width(w), height(h),
-																			theta(t),
-																			filepath(std::move(path)) {}
-
-	bool operator==(const TileKey &other) const
-	{
-		return zoom == other.zoom && x == other.x && y == other.y && width == other.width && height == other.height;
-	}
-};
 
 struct View
 {
-	float x;
-	float y;
+	ofVec2f offset;
 	float width;
 	float height;
 	float zoomLevel;
 	float scale;
 	float rotation; // view rotation
-	float theta;	// polarisation
-};
-
-template <class T>
-inline void hash_combine(std::size_t &seed, const T &v)
-{
-	std::hash<T> hasher;
-	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-namespace std
-{
-	template <>
-	struct hash<TileKey>
-	{
-		size_t operator()(const TileKey &k) const
-		{
-			size_t h1 = std::hash<int>()(k.zoom);
-			size_t h2 = std::hash<int>()(k.x);
-			size_t h3 = std::hash<int>()(k.y);
-			size_t h4 = std::hash<int>()(k.theta);
-			size_t hash = h1;
-			hash_combine(hash, h2);
-			hash_combine(hash, h3);
-			hash_combine(hash, h4);
-			return hash;
-		}
-	};
-}
-
-class TileCacheLRU
-{
-public:
-	TileCacheLRU(size_t maxSize) : maxSize(maxSize) {}
-
-	using CacheMap = std::unordered_map<TileKey, std::pair<ofTexture, std::list<TileKey>::iterator>>;
-	using const_iterator = CacheMap::const_iterator;
-	using iterator = CacheMap::iterator;
-
-	bool contains(const TileKey &key)
-	{
-		return cache.find(key) != cache.end();
-	}
-
-	bool get(const TileKey &key, ofTexture &outImg)
-	{
-		auto it = cache.find(key);
-		if (it == cache.end())
-			return false;
-		// Move to front
-		usage.splice(usage.begin(), usage, it->second.second);
-		outImg = it->second.first;
-		return true;
-	}
-
-	void touch(iterator it)
-	{
-		usage.splice(usage.begin(), usage, it->second.second);
-	}
-
-	void put(const TileKey &key, const ofTexture &img)
-	{
-		auto it = cache.find(key);
-		if (it != cache.end())
-		{
-			usage.splice(usage.begin(), usage, it->second.second);
-			it->second.first = img;
-			return;
-		}
-
-		if (cache.size() >= maxSize)
-		{
-			TileKey oldKey = usage.back();
-			usage.pop_back();
-			cache.erase(oldKey);
-		}
-		usage.push_front(key);
-		cache[key] = {img, usage.begin()};
-	}
-
-	size_t size()
-	{
-		return cache.size();
-	}
-
-	iterator begin() { return cache.begin(); }
-	iterator end() { return cache.end(); }
-	const_iterator begin() const { return cache.begin(); }
-	const_iterator end() const { return cache.end(); }
-
-private:
-	size_t maxSize;
-	std::list<TileKey> usage;
-	std::unordered_map<TileKey, std::pair<ofTexture, std::list<TileKey>::iterator>> cache;
+	int thetaIndex; // polarisation
+	float theta;
 };
 
 class ofApp : public ofBaseApp
@@ -177,24 +62,28 @@ public:
 	SmoothValueLinear currentZoom = {2.f, 5.f, 1.f, 8.f};
 	int currentZoomLevel = 5;
 	int lastZoomLevel = 5;
-	float scale = 1.f;
 
-	ofVec2f offset = {0, 0};
+	ofVec2f zoomCenter = {0, 0};
+	ofVec2f zoomOffset = {0, 0};
 	ofVec2f lastOffset;
 	ofVec2f mouseStart;
 	ofVec2f tileSize = {520, 384};
-	float theta;
 	std::vector<int> thetaLevels = {0, 18, 36, 54, 72, 90, 108, 126, 144, 162};
-	size_t thetaIndex = 0;
+	bool hasPanned = false;
 
-	TileCacheLRU tileCache{300};
+	// cache +- 1.5x view area at zoom level
+	// cache +- 1 zoom level of tiles
+	// cache +- 2 theta levels for current zoom level
+	std::unordered_map<TileKey, ofTexture> cacheMain;
+	TileCacheLRU cacheSecondary{400};
+	int cacheMisses = 0;
 
 	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;
 	int numberVisibleTiles = 0;
 
+	void updateCaches();
 	void loadTileList();
 	void loadVisibleTiles(const View &view);
-	void preloadZoomIn();
-	void preloadZoomOut();
+	void preloadZoom(int level);
 	void drawTiles();
 };

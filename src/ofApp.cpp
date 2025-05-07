@@ -31,8 +31,9 @@ void ofApp::setup()
     currentView.zoomLevel = currentZoom.getValue();
     currentView.width = ofGetWidth();
     currentView.height = ofGetHeight();
+    currentZoomLevel = std::floor(currentZoom.getValue());
 
-    zoomCenter = {ofGetWidth() / 2, ofGetHeight() / 2};
+    zoomCenter = {ofGetWidth() / 2.f, ofGetHeight() / 2.f};
 
     loader.start();
     loadTileList();
@@ -49,7 +50,9 @@ void ofApp::update()
 {
     loader.dispatchMainCallbacks(32);
 
-    float prevZoom = currentZoom.getValue();
+    float zoomTarget = currentZoom.getTargetValue();
+    int targetZoomLevel = std::floor(zoomTarget);
+
     bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
 
     bool shouldLoadZoomIn = false;
@@ -74,14 +77,6 @@ void ofApp::update()
             zoomCenter *= multiplier;
             lastZoomLevel = currentZoomLevel;
         }
-
-        bool zoomingIn = (prevZoom > currentZoom.getValue());
-        if (currentView.scale > 0.8f && zoomingIn)
-            shouldLoadZoomIn = true;
-        else if (currentView.scale < 0.7f && !zoomingIn)
-            shouldLoadZoomOut = true;
-
-        shouldLoadPan = true;
     }
 
     if (hasPanned)
@@ -91,6 +86,11 @@ void ofApp::update()
         shouldLoadZoomOut = true;
         shouldLoadPan = true;
     }
+
+    if (targetZoomLevel > currentZoomLevel)
+        shouldLoadZoomOut = true;
+    else if (targetZoomLevel < currentZoomLevel)
+        shouldLoadZoomIn = true;
 
     if (shouldLoadZoomOut)
         preloadZoom(currentZoomLevel + 1);
@@ -124,6 +124,30 @@ void ofApp::draw()
     blendShader.setUniform1f("alpha", blendAlpha);
     plane.draw();
     blendShader.end();
+
+    if (showDebug && drawCached)
+    {
+        ofPushMatrix();
+        ofScale(currentView.scale);
+        ofTranslate(currentView.offset + zoomOffset);
+        ofSetColor(0, 0, 255);
+        for (auto &it : cacheSecondary)
+        {
+            TileKey key = it.first;
+            if (key.theta != thetaLevels[currentView.thetaIndex])
+                continue;
+
+            float multiplier = key.zoom / std::powf(2, currentZoomLevel);
+            float x = multiplier * key.x;
+            float y = multiplier * key.y;
+            float w = multiplier * key.width;
+            float h = multiplier * key.height;
+
+            ofDrawRectangle(x + 1, y + 1, w - 2, h - 2);
+        }
+        ofPopMatrix();
+    }
+
     fboFinal.end();
 
     fboFinal.draw(0, 0);
@@ -176,8 +200,10 @@ void ofApp::keyPressed(int key)
         currentView.theta = std::fmodf(currentView.theta + 180.f - 0.5f, 180.f);
     else if (key == OF_KEY_RIGHT)
         currentView.theta = std::fmodf(currentView.theta + 0.5f, 180.f);
-    if (key == 'd')
+    else if (key == 'd')
         showDebug = !showDebug;
+    else if (key == 'c')
+        drawCached = !drawCached;
 
     // compute theta index
     int lastThetaIndex = currentView.thetaIndex;
@@ -195,7 +221,7 @@ void ofApp::keyPressed(int key)
     // compute alpha blend
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2;
-    if (currentView.thetaIndex == thetaLevels.size() - 1)
+    if (currentView.thetaIndex == static_cast<int>(thetaLevels.size()) - 1)
         t2 = thetaLevels[0] + 180;
     else
         t2 = thetaLevels[currentView.thetaIndex + 1];
@@ -219,7 +245,6 @@ void ofApp::mouseDragged(int x, int y, int button)
     ofVec2f mouse(x, y);
     currentView.offset = lastOffset - (mouseStart - mouse);
     hasPanned = true;
-    // loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
@@ -344,10 +369,10 @@ void ofApp::loadVisibleTiles(const View &view)
     int tCCW2 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 2) % thetaLevels.size()];
 
     // add an additional margin to preload tiles offscreen
-    const int left = -view.offset.x - windowWidth * 0.5f;
-    const int right = -view.offset.x + windowWidth * 1.5f;
-    const int top = -view.offset.y - windowHeight * 0.5f;
-    const int bottom = -view.offset.y + windowHeight * 1.5f;
+    const int left = -view.offset.x - windowWidth * 0.2f;
+    const int right = -view.offset.x + windowWidth * 1.2f;
+    const int top = -view.offset.y - windowHeight * 0.2f;
+    const int bottom = -view.offset.y + windowHeight * 1.2f;
 
     for (const TileKey &key : avaliableTiles[zoom])
     {
@@ -374,7 +399,8 @@ void ofApp::preloadZoom(int level)
     if (level < maxZoomLevel || level > minZoomLevel)
         return;
 
-    int t = thetaLevels[currentView.thetaIndex];
+    int t1 = thetaLevels[currentView.thetaIndex];
+    int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
     const int windowWidth = ofGetWidth() / currentView.scale;
     const int windowHeight = ofGetHeight() / currentView.scale;
@@ -388,13 +414,15 @@ void ofApp::preloadZoom(int level)
     float multiplier = std::powf(2.f, (level - currentZoomLevel));
     int zoom = static_cast<int>(std::floor(std::powf(2, level)));
 
-    ofLogNotice() << "- multiplier: " << ofToString(multiplier) << ", nextZoom: " << ofToString(zoom);
+    // ofLogNotice() << "- multiplier: " << ofToString(multiplier) << ", nextZoom: " << ofToString(zoom);
 
     for (const TileKey &key : avaliableTiles[zoom])
     {
         if (key.x * multiplier >= right || (key.x + key.width) * multiplier <= left ||
-            key.y * multiplier >= bottom || (key.y + key.height) * multiplier <= top ||
-            key.theta != t)
+            key.y * multiplier >= bottom || (key.y + key.height) * multiplier <= top)
+            continue;
+
+        if (key.theta != t1 && key.theta != t2)
             continue;
 
         if (!cacheSecondary.contains(key, false))
@@ -459,6 +487,7 @@ void ofApp::drawTiles()
             if (showDebug)
             {
                 ofSetColor(255, 0, 0);
+                ofSetLineWidth(3.f);
                 ofDrawRectangle(key.x, key.y, key.width, key.height);
             }
             ofPopMatrix();
@@ -477,6 +506,7 @@ void ofApp::drawTiles()
             if (showDebug)
             {
                 ofSetColor(0, 255, 0);
+                ofSetLineWidth(3.f);
                 ofDrawRectangle(key.x, key.y, key.width, key.height);
             }
             ofPopMatrix();

@@ -46,6 +46,7 @@ public:
 	ofPlanePrimitive plane;
 
 	bool showDebug = false;
+	bool drawCached = false;
 	ofFpsCounter fpsCounter = ofFpsCounter();
 	std::deque<float> fpsHistory;
 	size_t historyLength = 128;
@@ -75,7 +76,7 @@ public:
 	// cache +- 1 zoom level of tiles
 	// cache +- 2 theta levels for current zoom level
 	std::unordered_map<TileKey, ofTexture> cacheMain;
-	TileCacheLRU cacheSecondary{400};
+	TileCacheLRU cacheSecondary{600};
 	int cacheMisses = 0;
 
 	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;

@@ -75,8 +75,8 @@ public:
     }
 
 private:
+    float speed;
     float currentValue, targetValue;
     float minimum, maximum;
-    float speed;
     bool needsProcessing;
 };

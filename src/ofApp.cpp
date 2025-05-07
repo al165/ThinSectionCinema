@@ -33,7 +33,7 @@ void ofApp::setup()
     currentView.height = ofGetHeight();
     currentZoomLevel = std::floor(currentZoom.getValue());
 
-    zoomCenter = {ofGetWidth() / 2.f, ofGetHeight() / 2.f};
+    zoomCenter = {0.f, 0.f};
 
     loader.start();
     loadTileList();
@@ -64,19 +64,25 @@ void ofApp::update()
         currentZoomLevel = std::floor(currentZoom.getValue());
         currentZoomLevel = std::clamp(currentZoomLevel, maxZoomLevel, minZoomLevel);
 
+        ofVec2f zlCoordsBefore = screenToZoomLevelCoords({ofGetMouseX(), ofGetMouseY()});
         currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
         currentView.width = ofGetWidth() / currentView.scale;
         currentView.height = ofGetWidth() / currentView.scale;
         currentView.scale = currentView.scale;
         currentView.zoomLevel = currentZoomLevel;
 
+        ofVec2f zlCoordsAfter = screenToZoomLevelCoords({ofGetMouseX(), ofGetMouseY()});
+        currentView.offset += (zlCoordsBefore - zlCoordsAfter);
+
         if (currentZoomLevel != lastZoomLevel)
         {
             float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
             currentView.offset *= multiplier;
-            zoomCenter *= multiplier;
+            // zoomCenter *= multiplier;
             lastZoomLevel = currentZoomLevel;
         }
+
+        // zoomOffset = currentView.scale * (zoomCenter);
     }
 
     if (hasPanned)
@@ -129,7 +135,7 @@ void ofApp::draw()
     {
         ofPushMatrix();
         ofScale(currentView.scale);
-        ofTranslate(currentView.offset + zoomOffset);
+        ofTranslate(currentView.offset);
         ofSetColor(0, 0, 255);
         for (auto &it : cacheSecondary)
         {
@@ -243,8 +249,15 @@ void ofApp::mouseMoved(int x, int y)
 void ofApp::mouseDragged(int x, int y, int button)
 {
     ofVec2f mouse(x, y);
-    currentView.offset = lastOffset - (mouseStart - mouse);
+    // ofLogNotice() << ofToString(mouse);
+    // currentView.offset = lastOffset - (mouseStart - mouse);
     hasPanned = true;
+
+    ofVec2f delta = (mouse - mouseStart) / currentView.scale;
+
+    currentView.offset += delta;
+
+    mouseStart = ofVec2f(mouse);
 }
 
 //--------------------------------------------------------------
@@ -263,6 +276,9 @@ void ofApp::mouseReleased(int x, int y, int button)
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
     currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015);
+    // lastZoomCenter = ofVec2f(lastZoomCenter);
+    // zoomCenter.x = ofGetMouseX();
+    // zoomCenter.y = ofGetMouseY();
 }
 
 //--------------------------------------------------------------
@@ -394,8 +410,6 @@ void ofApp::loadVisibleTiles(const View &view)
 
 void ofApp::preloadZoom(int level)
 {
-    ofLogNotice() << "ofApp::preloadZoom level " << level;
-
     if (level < maxZoomLevel || level > minZoomLevel)
         return;
 
@@ -414,8 +428,6 @@ void ofApp::preloadZoom(int level)
     float multiplier = std::powf(2.f, (level - currentZoomLevel));
     int zoom = static_cast<int>(std::floor(std::powf(2, level)));
 
-    // ofLogNotice() << "- multiplier: " << ofToString(multiplier) << ", nextZoom: " << ofToString(zoom);
-
     for (const TileKey &key : avaliableTiles[zoom])
     {
         if (key.x * multiplier >= right || (key.x + key.width) * multiplier <= left ||
@@ -432,7 +444,7 @@ void ofApp::preloadZoom(int level)
             preloadCount++;
         }
     }
-    ofLogNotice() << "- preloaded " << ofToString(preloadCount) << " tiles for next zoom level";
+    // ofLogNotice() << "- preloaded " << ofToString(preloadCount) << " tiles for next zoom level";
 }
 
 void ofApp::drawTiles()
@@ -480,8 +492,8 @@ void ofApp::drawTiles()
         {
             fboA.begin();
             ofPushMatrix();
+            ofTranslate(currentView.offset + zoomCenter);
             ofScale(currentView.scale);
-            ofTranslate(currentView.offset + zoomOffset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug)
@@ -492,15 +504,13 @@ void ofApp::drawTiles()
             }
             ofPopMatrix();
             fboA.end();
-
-            // cacheSecondary.touch(it);
         }
         else if (key.theta == t2)
         {
             fboB.begin();
             ofPushMatrix();
+            ofTranslate(currentView.offset + zoomCenter);
             ofScale(currentView.scale);
-            ofTranslate(currentView.offset + zoomOffset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug)
@@ -511,8 +521,6 @@ void ofApp::drawTiles()
             }
             ofPopMatrix();
             fboB.end();
-
-            // cacheSecondary.touch(it);
         }
         else
             continue;
@@ -585,4 +593,14 @@ void ofApp::loadTileList()
 
         avaliableTiles[zoom] = tiles;
     }
+}
+
+ofVec2f ofApp::screenToZoomLevelCoords(ofVec2f s)
+{
+    return (s * currentView.scale) + currentView.offset;
+}
+
+ofVec2f ofApp::zoomLevelToScreenCoords(ofVec2f z)
+{
+    return (z - currentView.offset) / currentView.scale;
 }

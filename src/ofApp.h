@@ -65,6 +65,7 @@ public:
 	int lastZoomLevel = 5;
 
 	ofVec2f zoomCenter = {0, 0};
+	ofVec2f lastZoomCenter = {0, 0};
 	ofVec2f zoomOffset = {0, 0};
 	ofVec2f lastOffset;
 	ofVec2f mouseStart;
@@ -87,4 +88,7 @@ public:
 	void loadVisibleTiles(const View &view);
 	void preloadZoom(int level);
 	void drawTiles();
+
+	ofVec2f screenToZoomLevelCoords(ofVec2f coords);
+	ofVec2f zoomLevelToScreenCoords(ofVec2f coords);
 };

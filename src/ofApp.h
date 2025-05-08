@@ -79,6 +79,7 @@ public:
 	int cacheMisses = 0;
 
 	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;
+	std::unordered_map<int, ofVec2f> zoomWorldSizes;
 	int numberVisibleTiles = 0;
 
 	void updateCaches();
@@ -87,6 +88,9 @@ public:
 	void preloadZoom(int level);
 	void drawTiles();
 
-	ofVec2f screenToWorld(ofVec2f coords);
-	ofVec2f worldToScreen(ofVec2f coords);
+	ofVec2f screenToWorld(ofVec2f coords) const;
+	ofVec2f worldToScreen(ofVec2f coords) const;
+
+	ofVec2f globalToWorld(ofVec2f coords) const;
+	ofVec2f worldToGlobal(ofVec2f coords) const;
 };

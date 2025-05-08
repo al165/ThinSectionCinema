@@ -126,6 +126,7 @@ void ofApp::draw()
     float bottom = viewWorld.getBottom();
 
     ofVec2f cursorWorld = screenToWorld({static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY())});
+    ofVec2f cursorGlobal = worldToGlobal(cursorWorld);
 
     if (showDebug)
     {
@@ -201,6 +202,12 @@ void ofApp::draw()
         //         ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
         // }
         // ofEndShape();
+
+        std::string coordinates = std::format(
+            "Offset: {:.2f}, {:.2f}, Mouse: world {:.2f}, {:.2f} global {:.4f}, {:.4f}",
+            currentView.offset.x, currentView.offset.y, cursorWorld.x, cursorWorld.y, cursorGlobal.x, cursorGlobal.y);
+
+        ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
         std::string status = std::format(
             "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {})",
@@ -552,6 +559,8 @@ void ofApp::loadTileList()
         auto tileFiles = tiles.getFiles();
         ofLogNotice() << "  - Found " << tileFiles.size() + " tiles";
 
+        ofVec2f zoomSize(0.f, 0.f);
+
         std::vector<TileKey> tiles;
         tiles.reserve(tileFiles.size());
         for (size_t i = 0; i < tileFiles.size(); i++)
@@ -570,18 +579,55 @@ void ofApp::loadTileList()
                 std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
                 tiles.emplace_back(zoom, x, y, width, height, t, filepath);
             }
+
+            zoomSize.x = std::max(zoomSize.x, static_cast<float>(x + width));
+            zoomSize.y = std::max(zoomSize.y, static_cast<float>(y + height));
         }
 
         avaliableTiles[zoom] = tiles;
+        zoomWorldSizes[zoom] = zoomSize;
     }
 }
 
-ofVec2f ofApp::screenToWorld(ofVec2f coords)
+ofVec2f ofApp::screenToWorld(ofVec2f coords) const
 {
     return (coords / currentView.scale) + currentView.offset;
 }
 
-ofVec2f ofApp::worldToScreen(ofVec2f coords)
+ofVec2f ofApp::worldToScreen(ofVec2f coords) const
 {
     return (coords - currentView.offset) * currentView.scale;
+}
+
+ofVec2f ofApp::globalToWorld(ofVec2f coords) const
+{
+    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    ofVec2f zoomSize(0.f, 0.f);
+    try
+    {
+        zoomSize.set(zoomWorldSizes.at(zoom));
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+        return coords;
+    }
+    return coords * zoomSize;
+}
+
+ofVec2f ofApp::worldToGlobal(ofVec2f coords) const
+{
+    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    ofVec2f zoomSize(0.f, 0.f);
+    try
+    {
+        zoomSize.set(zoomWorldSizes.at(zoom));
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+        return coords;
+    }
+
+    return coords / zoomSize;
 }

@@ -43,6 +43,19 @@ public:
         needsProcessing = true;
     }
 
+    void setValue(float value)
+    {
+        currentValue = std::clamp(value, minimum, maximum);
+        needsProcessing = true;
+    }
+
+    void jumpTo(float value)
+    {
+        currentValue = std::clamp(value, minimum, maximum);
+        targetValue = currentValue;
+        needsProcessing = true;
+    }
+
     float getValue() const
     {
         return currentValue;

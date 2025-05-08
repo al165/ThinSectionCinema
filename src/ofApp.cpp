@@ -28,9 +28,6 @@ void ofApp::setup()
     tiles.allowExt("jpg");
     tiles.listDir();
 
-    currentView.zoomLevel = currentZoom.getValue();
-    currentView.width = ofGetWidth();
-    currentView.height = ofGetHeight();
     currentZoomLevel = std::floor(currentZoom.getValue());
 
     zoomCenter = {0.f, 0.f};
@@ -53,59 +50,48 @@ void ofApp::update()
     float zoomTarget = currentZoom.getTargetValue();
     int targetZoomLevel = std::floor(zoomTarget);
 
+    float prevZoom = currentZoom.getValue();
     bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
+    bool zoomingIn = prevZoom > currentZoom.getValue();
 
     bool shouldLoadZoomIn = false;
     bool shouldLoadZoomOut = false;
-    bool shouldLoadPan = false;
 
     if (zoomUpdated)
     {
-        currentZoomLevel = std::floor(currentZoom.getValue());
-        currentZoomLevel = std::clamp(currentZoomLevel, maxZoomLevel, minZoomLevel);
-
-        ofVec2f zlCoordsBefore = screenToZoomLevelCoords({ofGetMouseX(), ofGetMouseY()});
+        ofVec2f worldBefore = screenToWorld(zoomCenter);
         currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
-        currentView.width = ofGetWidth() / currentView.scale;
-        currentView.height = ofGetWidth() / currentView.scale;
-        currentView.scale = currentView.scale;
-        currentView.zoomLevel = currentZoomLevel;
+        ofVec2f worldAfter = screenToWorld(zoomCenter);
+        currentView.offset += (worldBefore - worldAfter);
 
-        ofVec2f zlCoordsAfter = screenToZoomLevelCoords({ofGetMouseX(), ofGetMouseY()});
-        currentView.offset += (zlCoordsBefore - zlCoordsAfter);
+        currentZoomLevel = std::clamp(
+            static_cast<int>(std::floor(currentZoom.getValue())),
+            maxZoomLevel, minZoomLevel);
 
         if (currentZoomLevel != lastZoomLevel)
         {
+            // changed zoom level, rescale everything
             float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
+            currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+
             currentView.offset *= multiplier;
-            // zoomCenter *= multiplier;
+            zoomCenter *= multiplier;
             lastZoomLevel = currentZoomLevel;
         }
 
-        // zoomOffset = currentView.scale * (zoomCenter);
+        if (currentView.scale > 0.8 && zoomingIn)
+            shouldLoadZoomIn = true;
+        else if (currentView.scale < 0.6 && !zoomingIn)
+            shouldLoadZoomOut = true;
     }
 
-    if (hasPanned)
-    {
-        hasPanned = false;
-        shouldLoadZoomIn = true;
-        shouldLoadZoomOut = true;
-        shouldLoadPan = true;
-    }
-
-    if (targetZoomLevel > currentZoomLevel)
-        shouldLoadZoomOut = true;
-    else if (targetZoomLevel < currentZoomLevel)
-        shouldLoadZoomIn = true;
+    loadVisibleTiles(currentView);
 
     if (shouldLoadZoomOut)
         preloadZoom(currentZoomLevel + 1);
 
     if (shouldLoadZoomIn)
         preloadZoom(currentZoomLevel - 1);
-
-    if (shouldLoadPan)
-        loadVisibleTiles(currentView);
 
     updateCaches();
 
@@ -131,26 +117,59 @@ void ofApp::draw()
     plane.draw();
     blendShader.end();
 
-    if (showDebug && drawCached)
+    ofRectangle viewWorld(
+        screenToWorld({0.f, 0.f}),
+        screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
+    float right = viewWorld.getRight();
+    float left = viewWorld.getLeft();
+    float top = viewWorld.getTop();
+    float bottom = viewWorld.getBottom();
+
+    ofVec2f cursorWorld = screenToWorld({static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY())});
+
+    if (showDebug)
     {
         ofPushMatrix();
         ofScale(currentView.scale);
-        ofTranslate(currentView.offset);
-        ofSetColor(0, 0, 255);
-        for (auto &it : cacheSecondary)
+        ofTranslate(-currentView.offset);
+
+        if (drawCached)
         {
-            TileKey key = it.first;
-            if (key.theta != thetaLevels[currentView.thetaIndex])
-                continue;
+            ofPushStyle();
+            ofSetColor(0, 0, 255);
+            ofNoFill();
+            for (auto &it : cacheSecondary)
+            {
+                TileKey key = it.first;
+                if (key.theta != thetaLevels[currentView.thetaIndex])
+                    continue;
 
-            float multiplier = key.zoom / std::powf(2, currentZoomLevel);
-            float x = multiplier * key.x;
-            float y = multiplier * key.y;
-            float w = multiplier * key.width;
-            float h = multiplier * key.height;
+                float multiplier = key.zoom / std::powf(2, currentZoomLevel);
+                float x = multiplier * key.x;
+                float y = multiplier * key.y;
+                float w = multiplier * key.width;
+                float h = multiplier * key.height;
 
-            ofDrawRectangle(x + 1, y + 1, w - 2, h - 2);
+                if (x > right || key.x + key.width < left ||
+                    y > bottom || key.y + key.height < top)
+                    continue;
+
+                ofDrawRectangle(x + 2, y + 2, w - 4, h - 4);
+            }
+            ofPopStyle();
         }
+
+        ofPushStyle();
+        ofNoFill();
+        ofSetColor(0, 255, 0);
+        ofSetLineWidth(1.f);
+        ofDrawLine(cursorWorld.x, top, cursorWorld.x, bottom);
+        ofDrawLine(left, cursorWorld.y, right, cursorWorld.y);
+        ofSetColor(255, 0, 0);
+        ofSetLineWidth(6.f);
+        ofDrawRectangle(viewWorld);
+        ofPopStyle();
+
         ofPopMatrix();
     }
 
@@ -164,24 +183,24 @@ void ofApp::draw()
 
     if (showDebug)
     {
-        ofDrawBitmapStringHighlight("Frame delta (ms): " + ofToString(delta), 0, 20);
-        const int graphHeight = 40;
-        const int graphWidth = 120;
-        ofSetColor(0, 200);
-        ofFill();
-        ofDrawRectangle(0, 20, graphWidth, graphHeight);
-        ofSetColor(255);
-        ofNoFill();
-        ofDrawRectangle(0, 20, graphWidth, graphHeight);
+        // ofDrawBitmapStringHighlight("Frame delta (ms): " + ofToString(delta), 0, 20);
+        // const int graphHeight = 40;
+        // const int graphWidth = 120;
+        // ofSetColor(0, 200);
+        // ofFill();
+        // ofDrawRectangle(0, 20, graphWidth, graphHeight);
+        // ofSetColor(255);
+        // ofNoFill();
+        // ofDrawRectangle(0, 20, graphWidth, graphHeight);
 
-        ofBeginShape();
-        for (size_t i = 0; i < fpsHistory.size(); i++)
-        {
-            ofVertex(
-                ofMap(i, 0, historyLength, 0, graphWidth),
-                ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
-        }
-        ofEndShape();
+        // ofBeginShape();
+        // for (size_t i = 0; i < fpsHistory.size(); i++)
+        // {
+        //     ofVertex(
+        //         ofMap(i, 0, historyLength, 0, graphWidth),
+        //         ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
+        // }
+        // ofEndShape();
 
         std::string status = std::format(
             "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {})",
@@ -236,11 +255,6 @@ void ofApp::keyPressed(int key)
 }
 
 //--------------------------------------------------------------
-void ofApp::keyReleased(int key)
-{
-}
-
-//--------------------------------------------------------------
 void ofApp::mouseMoved(int x, int y)
 {
 }
@@ -249,44 +263,33 @@ void ofApp::mouseMoved(int x, int y)
 void ofApp::mouseDragged(int x, int y, int button)
 {
     ofVec2f mouse(x, y);
-    // ofLogNotice() << ofToString(mouse);
-    // currentView.offset = lastOffset - (mouseStart - mouse);
-    hasPanned = true;
-
     ofVec2f delta = (mouse - mouseStart) / currentView.scale;
-
-    currentView.offset += delta;
-
-    mouseStart = ofVec2f(mouse);
+    currentView.offset -= delta;
+    mouseStart.set(x, y);
 }
 
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
-    mouseStart = ofVec2f(x, y);
-    lastOffset = currentView.offset;
+    mouseStart.set(x, y);
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseReleased(int x, int y, int button)
 {
+    loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
-    currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015);
-    // lastZoomCenter = ofVec2f(lastZoomCenter);
-    // zoomCenter.x = ofGetMouseX();
-    // zoomCenter.y = ofGetMouseY();
+    zoomCenter.set(x, y);
+    currentZoom.jumpTo(currentZoom.getValue() - scrollY * 0.015f);
 }
 
 //--------------------------------------------------------------
 void ofApp::windowResized(int w, int h)
 {
-    currentView.width = w / currentView.scale;
-    currentView.height = h / currentView.scale;
-
     fboA.allocate(w, h, GL_RGBA);
     fboB.allocate(w, h, GL_RGBA);
     fboFinal.allocate(w, h, GL_RGBA);
@@ -295,29 +298,25 @@ void ofApp::windowResized(int w, int h)
     plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
     plane.mapTexCoordsFromTexture(fboFinal.getTexture());
 
-    loadVisibleTiles(currentView);
-}
-
-//--------------------------------------------------------------
-void ofApp::dragEvent(ofDragInfo dragInfo)
-{
+    updateCaches();
 }
 
 //--------------------------------------------------------------
 void ofApp::updateCaches()
 {
-    const int windowWidth = ofGetWidth() / currentView.scale;
-    const int windowHeight = ofGetHeight() / currentView.scale;
-
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
-    const int left = -currentView.offset.x - windowWidth * 0.2f;
-    const int right = -currentView.offset.x + windowWidth * 1.2f;
-    const int top = -currentView.offset.y - windowHeight * 0.2f;
-    const int bottom = -currentView.offset.y + windowHeight * 1.2f;
+    ofRectangle viewWorld(
+        screenToWorld({0.f, 0.f}),
+        screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
 
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
+
+    float right = viewWorld.getRight();
+    float left = viewWorld.getLeft();
+    float top = viewWorld.getTop();
+    float bottom = viewWorld.getBottom();
 
     // 1. Demote from MAIN
     for (auto it = cacheMain.begin(); it != cacheMain.end();)
@@ -339,32 +338,25 @@ void ofApp::updateCaches()
     // 2. Check which tiles are needed
     for (const TileKey &key : avaliableTiles[zoom])
     {
-        if (key.x >= right || key.x + key.width <= left ||
-            key.y >= bottom || key.y + key.height <= top)
+        if (cacheMain.count(key))
             continue;
 
-        if (key.theta != t1 && key.theta != t2)
+        if (
+            (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top) ||
+            (key.theta != t1 && key.theta != t2))
             continue;
 
-        // tile is needed, make sure it is in cacheMain
-        if (!cacheMain.count(key))
+        ofTexture tile;
+        if (cacheSecondary.get(key, tile))
         {
-            // not in cacheMain, check secondary
-
-            ofTexture tile;
-            if (cacheSecondary.get(key, tile))
-            {
-                // promote to main
-                cacheMain[key] = tile;
-                cacheSecondary.erase(key);
-            }
-            else
-            {
-                // ofLogWarning("Cache miss");
-                cacheMisses++;
-                loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                                   { cacheMain[key] = tile.getTexture(); });
-            }
+            cacheMain[key] = tile;
+            cacheSecondary.erase(key);
+        }
+        else
+        {
+            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                               { cacheMisses++;
+                                 cacheMain[key] = tile.getTexture(); });
         }
     }
 }
@@ -372,9 +364,6 @@ void ofApp::updateCaches()
 //--------------------------------------------------------------
 void ofApp::loadVisibleTiles(const View &view)
 {
-    const int windowWidth = ofGetWidth() / view.scale;
-    const int windowHeight = ofGetHeight() / view.scale;
-
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
     // preload thetas CW and CCW from current
@@ -382,13 +371,17 @@ void ofApp::loadVisibleTiles(const View &view)
     int tCW1 = thetaLevels[(view.thetaIndex + 1) % thetaLevels.size()];
     int tCW2 = thetaLevels[(view.thetaIndex + 2) % thetaLevels.size()];
     int tCCW1 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
-    int tCCW2 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 2) % thetaLevels.size()];
 
     // add an additional margin to preload tiles offscreen
-    const int left = -view.offset.x - windowWidth * 0.2f;
-    const int right = -view.offset.x + windowWidth * 1.2f;
-    const int top = -view.offset.y - windowHeight * 0.2f;
-    const int bottom = -view.offset.y + windowHeight * 1.2f;
+    ofRectangle viewWorld(
+        screenToWorld({0.f, 0.f}),
+        screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
+
+    viewWorld.scaleFromCenter(1.3f);
+    float right = viewWorld.getRight();
+    float left = viewWorld.getLeft();
+    float top = viewWorld.getTop();
+    float bottom = viewWorld.getBottom();
 
     for (const TileKey &key : avaliableTiles[zoom])
     {
@@ -396,7 +389,7 @@ void ofApp::loadVisibleTiles(const View &view)
             key.y >= bottom || key.y + key.height <= top)
             continue;
 
-        if (key.theta != t && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1 && key.theta != tCCW2)
+        if (key.theta != t && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1)
             continue;
 
         if (cacheMain.count(key))
@@ -413,28 +406,30 @@ void ofApp::preloadZoom(int level)
     if (level < maxZoomLevel || level > minZoomLevel)
         return;
 
+    float multiplier = std::powf(2.f, (level - currentZoomLevel));
+
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
-    const int windowWidth = ofGetWidth() / currentView.scale;
-    const int windowHeight = ofGetHeight() / currentView.scale;
+    ofRectangle viewWorld(
+        screenToWorld({0.f, 0.f}),
+        screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
 
-    const int left = -currentView.offset.x;
-    const int right = -currentView.offset.x + windowWidth;
-    const int top = -currentView.offset.y;
-    const int bottom = -currentView.offset.y + windowHeight;
+    float right = viewWorld.getRight() / multiplier;
+    float left = viewWorld.getLeft() / multiplier;
+    float top = viewWorld.getTop() / multiplier;
+    float bottom = viewWorld.getBottom() / multiplier;
 
     int preloadCount = 0;
-    float multiplier = std::powf(2.f, (level - currentZoomLevel));
     int zoom = static_cast<int>(std::floor(std::powf(2, level)));
 
     for (const TileKey &key : avaliableTiles[zoom])
     {
-        if (key.x * multiplier >= right || (key.x + key.width) * multiplier <= left ||
-            key.y * multiplier >= bottom || (key.y + key.height) * multiplier <= top)
+        if (key.theta != t1 && key.theta != t2)
             continue;
 
-        if (key.theta != t1 && key.theta != t2)
+        if (key.x >= right || (key.x + key.width) <= left ||
+            key.y >= bottom || (key.y + key.height) <= top)
             continue;
 
         if (!cacheSecondary.contains(key, false))
@@ -444,24 +439,15 @@ void ofApp::preloadZoom(int level)
             preloadCount++;
         }
     }
-    // ofLogNotice() << "- preloaded " << ofToString(preloadCount) << " tiles for next zoom level";
 }
 
 void ofApp::drawTiles()
 {
-    const int windowWidth = ofGetWidth() / currentView.scale;
-    const int windowHeight = ofGetHeight() / currentView.scale;
-
-    const int left = -currentView.offset.x - zoomOffset.x;
-    const int right = -currentView.offset.x - zoomOffset.x + windowWidth;
-    const int top = -currentView.offset.y - zoomOffset.y;
-    const int bottom = -currentView.offset.y - zoomOffset.y + windowHeight;
-
     numberVisibleTiles = 0;
 
     ofNoFill();
     ofSetColor(255);
-    ofSetLineWidth(1.0);
+    ofSetLineWidth(1.f);
 
     fboA.begin();
     ofBackground(0);
@@ -471,7 +457,6 @@ void ofApp::drawTiles()
     ofBackground(0);
     fboB.end();
 
-    int zoom = std::floor(std::powf(2.f, currentZoomLevel));
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
@@ -480,20 +465,13 @@ void ofApp::drawTiles()
         const TileKey &key = it->first;
         const ofTexture &tile = it->second;
 
-        if (key.zoom != zoom)
-            continue;
-
-        if (key.x >= right || key.x + key.width <= left ||
-            key.y >= bottom || key.y + key.height <= top)
-            continue;
-
         // draw thetas on different fbos
         if (key.theta == t1)
         {
             fboA.begin();
             ofPushMatrix();
-            ofTranslate(currentView.offset + zoomCenter);
             ofScale(currentView.scale);
+            ofTranslate(-currentView.offset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug)
@@ -509,8 +487,8 @@ void ofApp::drawTiles()
         {
             fboB.begin();
             ofPushMatrix();
-            ofTranslate(currentView.offset + zoomCenter);
             ofScale(currentView.scale);
+            ofTranslate(-currentView.offset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug)
@@ -551,8 +529,11 @@ void ofApp::loadTileList()
 
     std::sort(thetaLevels.begin(), thetaLevels.end());
     ofLogNotice("- Theta levels:");
+    std::string levels = "";
     for (const int t : thetaLevels)
-        ofLogNotice("   " + ofToString(t));
+        levels += " " + t;
+
+    ofLogNotice() << levels;
 
     // Get all the tiles
     for (const ofFile &zoomDir : zoomLevelsDirs)
@@ -562,14 +543,14 @@ void ofApp::loadTileList()
 
         int zoom = ofToInt(zoomDir.getFileName());
 
-        ofLogNotice("- Zoom level: " + ofToString(zoom));
+        ofLogNotice() << "- Zoom level " << zoom;
 
         tiles = ofDirectory(tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/0.0/");
         tiles.allowExt("jpg");
         tiles.listDir();
 
         auto tileFiles = tiles.getFiles();
-        ofLogNotice(" - Found " + ofToString(tileFiles.size()) + " tiles");
+        ofLogNotice() << "  - Found " << tileFiles.size() + " tiles";
 
         std::vector<TileKey> tiles;
         tiles.reserve(tileFiles.size());
@@ -595,12 +576,12 @@ void ofApp::loadTileList()
     }
 }
 
-ofVec2f ofApp::screenToZoomLevelCoords(ofVec2f s)
+ofVec2f ofApp::screenToWorld(ofVec2f coords)
 {
-    return (s * currentView.scale) + currentView.offset;
+    return (coords / currentView.scale) + currentView.offset;
 }
 
-ofVec2f ofApp::zoomLevelToScreenCoords(ofVec2f z)
+ofVec2f ofApp::worldToScreen(ofVec2f coords)
 {
-    return (z - currentView.offset) / currentView.scale;
+    return (coords - currentView.offset) * currentView.scale;
 }

@@ -31,21 +31,19 @@ public:
 	void exit();
 
 	void keyPressed(int key);
-	void keyReleased(int key);
 	void mouseMoved(int x, int y);
 	void mouseDragged(int x, int y, int button);
 	void mousePressed(int x, int y, int button);
 	void mouseReleased(int x, int y, int button);
 	void mouseScrolled(int x, int y, float scrollX, float scrollY);
 	void windowResized(int w, int h);
-	void dragEvent(ofDragInfo dragInfo);
 
 	ofFbo fboA, fboB, fboFinal;
 	ofShader blendShader;
 	float blendAlpha;
 	ofPlanePrimitive plane;
 
-	bool showDebug = false;
+	bool showDebug = true;
 	bool drawCached = false;
 	ofFpsCounter fpsCounter = ofFpsCounter();
 	std::deque<float> fpsHistory;
@@ -89,6 +87,6 @@ public:
 	void preloadZoom(int level);
 	void drawTiles();
 
-	ofVec2f screenToZoomLevelCoords(ofVec2f coords);
-	ofVec2f zoomLevelToScreenCoords(ofVec2f coords);
+	ofVec2f screenToWorld(ofVec2f coords);
+	ofVec2f worldToScreen(ofVec2f coords);
 };

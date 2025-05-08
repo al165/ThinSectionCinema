@@ -29,6 +29,7 @@ void ofApp::setup()
     tiles.listDir();
 
     currentZoomLevel = std::floor(currentZoom.getValue());
+    currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
 
     zoomCenter = {0.f, 0.f};
 
@@ -40,15 +41,19 @@ void ofApp::setup()
     updateCaches();
 
     ofResetElapsedTimeCounter();
+
+    // ofVec2f worldTarget = globalToWorld({0.96641651, 0.57013889});
+    zoomCenter.set(globalToWorld({0.3, 0.3}));
+    ofLogNotice() << "zoomTarget: " << zoomCenter;
+
+    currentZoom.speed = .1f;
+    currentZoom.setTarget(1.1f);
 }
 
 //--------------------------------------------------------------
 void ofApp::update()
 {
     loader.dispatchMainCallbacks(32);
-
-    float zoomTarget = currentZoom.getTargetValue();
-    int targetZoomLevel = std::floor(zoomTarget);
 
     float prevZoom = currentZoom.getValue();
     bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
@@ -59,10 +64,10 @@ void ofApp::update()
 
     if (zoomUpdated)
     {
-        ofVec2f worldBefore = screenToWorld(zoomCenter);
+        ofVec2f screenBefore = worldToScreen(zoomCenter);
         currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
-        ofVec2f worldAfter = screenToWorld(zoomCenter);
-        currentView.offset += (worldBefore - worldAfter);
+        ofVec2f screenAfter = worldToScreen(zoomCenter);
+        currentView.offset -= (screenBefore - screenAfter) / currentView.scale;
 
         currentZoomLevel = std::clamp(
             static_cast<int>(std::floor(currentZoom.getValue())),
@@ -70,12 +75,10 @@ void ofApp::update()
 
         if (currentZoomLevel != lastZoomLevel)
         {
-            // changed zoom level, rescale everything
             float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
             currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
-
-            currentView.offset *= multiplier;
             zoomCenter *= multiplier;
+            currentView.offset *= multiplier;
             lastZoomLevel = currentZoomLevel;
         }
 
@@ -162,6 +165,10 @@ void ofApp::draw()
 
         ofPushStyle();
         ofNoFill();
+
+        ofSetColor(255, 255, 0);
+        ofDrawCircle(zoomCenter, 10 / currentView.scale);
+
         ofSetColor(0, 255, 0);
         ofSetLineWidth(1.f);
         ofDrawLine(cursorWorld.x, top, cursorWorld.x, bottom);
@@ -290,8 +297,10 @@ void ofApp::mouseReleased(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
-    zoomCenter.set(x, y);
-    currentZoom.jumpTo(currentZoom.getValue() - scrollY * 0.015f);
+    // zoomCenter.set(x, y);
+    zoomCenter.set(screenToWorld({(float)x, (float)y}));
+    currentZoom.speed = 2.f;
+    currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015f);
 }
 
 //--------------------------------------------------------------

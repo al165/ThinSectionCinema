@@ -9,6 +9,8 @@
 #include "TileCacheLRU.hpp"
 #include "AsyncTextureLoader.hpp"
 
+#include "ofxAnimatableFloat.h"
+
 struct View
 {
 	ofVec2f offset;
@@ -58,18 +60,23 @@ public:
 	const float minZoom = 8.f;
 	const int maxZoomLevel = 1;
 	const int minZoomLevel = 5;
-	SmoothValueLinear currentZoom = {2.f, 5.f, 1.f, 8.f};
+	SmoothValueLinear currentZoom = {2.f, 5.3f, 1.f, 8.f};
 	int currentZoomLevel = 5;
 	int lastZoomLevel = 5;
+	ofRectangle viewWorld;
 
-	ofVec2f zoomCenter = {0, 0};
-	ofVec2f lastZoomCenter = {0, 0};
-	ofVec2f zoomOffset = {0, 0};
-	ofVec2f lastOffset;
+	ofVec2f zoomCenter = {0.f, 0.f};
 	ofVec2f mouseStart;
-	ofVec2f tileSize = {520, 384};
+	// SmoothVec2Linear offsetDelta = {2.f, {0.f, 0.f}};
+	ofVec2f offsetDelta = {0.f, 0.f};
+
+	ofxAnimatableFloat viewTargetAnim;
+	ofxAnimatableFloat zoomAnim;
+	ofVec2f viewTarget = {0.f, 0.f};
+	ofVec2f viewStart = {0.f, 0.f};
+	bool focusViewTarget = false;
+
 	std::vector<int> thetaLevels = {0, 18, 36, 54, 72, 90, 108, 126, 144, 162};
-	bool hasPanned = false;
 
 	// cache +- 1.5x view area at zoom level
 	// cache +- 1 zoom level of tiles
@@ -87,6 +94,8 @@ public:
 	void loadVisibleTiles(const View &view);
 	void preloadZoom(int level);
 	void drawTiles();
+	void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
+	void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
 
 	ofVec2f screenToWorld(ofVec2f coords) const;
 	ofVec2f worldToScreen(ofVec2f coords) const;

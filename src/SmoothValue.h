@@ -1,25 +1,6 @@
+
 #include <math.h>
-
-#define TWO_PI 6.28318530717958647693
-
-class SmoothValue
-{
-public:
-    SmoothValue(float smoothTimeMS, float frameRate) : z(0.f)
-    {
-        a = std::exp(-TWO_PI / (smoothTimeMS * 0.001 * frameRate));
-        b = 1.f - a;
-    }
-
-    float process(float input)
-    {
-        z = (input * b) + (z * a);
-        return z;
-    }
-
-private:
-    float a, b, z;
-};
+#include "ofMain.h"
 
 class SmoothValueLinear
 {
@@ -92,5 +73,73 @@ public:
 private:
     float currentValue, targetValue;
     float minimum, maximum;
+    bool needsProcessing;
+};
+
+class SmoothVec2Linear
+{
+public:
+    SmoothVec2Linear(
+        float s,
+        ofVec2f startValue) : speed(s),
+                              currentValue(startValue),
+                              targetValue(startValue),
+                              needsProcessing(true)
+    {
+    }
+
+    void setTarget(ofVec2f target)
+    {
+        targetValue.set(target);
+        needsProcessing = true;
+    }
+
+    void setValue(ofVec2f value)
+    {
+        currentValue.set(value);
+        needsProcessing = true;
+    }
+
+    void jumpTo(float value)
+    {
+        currentValue.set(value);
+        targetValue.set(currentValue);
+        needsProcessing = true;
+    }
+
+    ofVec2f getValue() const
+    {
+        return currentValue;
+    }
+
+    ofVec2f getTargetValue() const
+    {
+        return targetValue;
+    }
+
+    bool process(float deltaS)
+    {
+        if (!needsProcessing)
+            return false;
+
+        ofVec2f diff = targetValue - currentValue;
+
+        if (diff.lengthSquared() < 0.01f)
+        {
+            currentValue = targetValue;
+            needsProcessing = false;
+        }
+        else
+        {
+            float step = speed * deltaS;
+            currentValue += diff * std::min(step, 1.f);
+        }
+        return true;
+    }
+
+    float speed;
+
+private:
+    ofVec2f currentValue, targetValue;
     bool needsProcessing;
 };

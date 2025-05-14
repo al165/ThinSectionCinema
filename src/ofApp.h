@@ -21,6 +21,7 @@ struct View
 	float rotation; // view rotation
 	int thetaIndex; // polarisation
 	float theta;
+	ofRectangle viewWorld;
 };
 
 class ofApp : public ofBaseApp
@@ -63,7 +64,7 @@ public:
 	SmoothValueLinear currentZoom = {2.f, 5.3f, 1.f, 8.f};
 	int currentZoomLevel = 5;
 	int lastZoomLevel = 5;
-	ofRectangle viewWorld;
+	// ofRectangle viewWorld;
 
 	ofVec2f zoomCenter = {0.f, 0.f};
 	ofVec2f mouseStart;

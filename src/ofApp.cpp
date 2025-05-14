@@ -43,7 +43,7 @@ void ofApp::setup()
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
 
-    setViewTarget(globalToWorld({0.96641651, 0.57013889}), 5.f);
+    // setViewTarget(globalToWorld({0.96641651, 0.57013889}), 5.f);
 }
 
 //--------------------------------------------------------------
@@ -92,7 +92,7 @@ void ofApp::update()
             shouldLoadZoomOut = true;
     }
 
-    viewWorld.set(
+    currentView.viewWorld.set(
         screenToWorld({0.f, 0.f}),
         screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
 
@@ -101,11 +101,22 @@ void ofApp::update()
         ofVec2f targetStartScreen = worldToScreen(viewStart);
         ofVec2f targetScreen = worldToScreen(viewTarget) - ofVec2f(ofGetWidth() / 2.f, ofGetHeight() / 2.f);
 
-        ofVec2f tween = targetScreen * viewTargetAnim.val() + targetStartScreen * (1.f - viewTargetAnim.val());
+        float t = viewTargetAnim.val();
+        ofVec2f tween = targetScreen * t + targetStartScreen * (1.f - t);
         offsetDelta.set(screenToWorld(tween) - currentView.offset);
-    }
 
-    loadVisibleTiles(currentView);
+        // load tiles further down animation path
+        View futureView(currentView);
+        float t2 = std::sqrtf(t);
+        ofVec2f tween2 = targetScreen * t2 + targetStartScreen * (1.f - t2);
+
+        futureView.offset = screenToWorld(tween2);
+        loadVisibleTiles(futureView);
+    }
+    else
+    {
+        loadVisibleTiles(currentView);
+    }
 
     if (shouldLoadZoomOut)
         preloadZoom(currentZoomLevel + 1);
@@ -137,10 +148,10 @@ void ofApp::draw()
     plane.draw();
     blendShader.end();
 
-    float right = viewWorld.getRight();
-    float left = viewWorld.getLeft();
-    float top = viewWorld.getTop();
-    float bottom = viewWorld.getBottom();
+    float right = currentView.viewWorld.getRight();
+    float left = currentView.viewWorld.getLeft();
+    float top = currentView.viewWorld.getTop();
+    float bottom = currentView.viewWorld.getBottom();
 
     ofVec2f cursorWorld = screenToWorld({static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY())});
     ofVec2f cursorGlobal = worldToGlobal(cursorWorld);
@@ -189,7 +200,7 @@ void ofApp::draw()
         ofDrawLine(left, cursorWorld.y, right, cursorWorld.y);
         ofSetColor(255, 0, 0);
         ofSetLineWidth(6.f);
-        ofDrawRectangle(viewWorld);
+        ofDrawRectangle(currentView.viewWorld);
         ofPopStyle();
 
         ofPopMatrix();
@@ -344,10 +355,10 @@ void ofApp::updateCaches()
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
-    float right = viewWorld.getRight();
-    float left = viewWorld.getLeft();
-    float top = viewWorld.getTop();
-    float bottom = viewWorld.getBottom();
+    float right = currentView.viewWorld.getRight();
+    float left = currentView.viewWorld.getLeft();
+    float top = currentView.viewWorld.getTop();
+    float bottom = currentView.viewWorld.getBottom();
 
     // 1. Demote from MAIN
     for (auto it = cacheMain.begin(); it != cacheMain.end();)
@@ -404,7 +415,7 @@ void ofApp::loadVisibleTiles(const View &view)
     int tCCW1 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
 
     // add an additional margin to preload tiles offscreen
-    ofRectangle margin(viewWorld);
+    ofRectangle margin(view.viewWorld);
     margin.scaleFromCenter(1.3f);
     float right = margin.getRight();
     float left = margin.getLeft();
@@ -439,10 +450,10 @@ void ofApp::preloadZoom(int level)
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
-    float right = viewWorld.getRight() / multiplier;
-    float left = viewWorld.getLeft() / multiplier;
-    float top = viewWorld.getTop() / multiplier;
-    float bottom = viewWorld.getBottom() / multiplier;
+    float right = currentView.viewWorld.getRight() / multiplier;
+    float left = currentView.viewWorld.getLeft() / multiplier;
+    float top = currentView.viewWorld.getTop() / multiplier;
+    float bottom = currentView.viewWorld.getBottom() / multiplier;
 
     int preloadCount = 0;
     int zoom = static_cast<int>(std::floor(std::powf(2, level)));

@@ -9,6 +9,7 @@
 #include "TileCacheLRU.hpp"
 #include "AsyncTextureLoader.hpp"
 
+#include "ofxFFmpegRecorder.h"
 #include "ofxAnimatableFloat.h"
 
 struct View
@@ -46,6 +47,15 @@ public:
 	float blendAlpha;
 	ofPlanePrimitive plane;
 
+	ofxFFmpegRecorder ffmpegRecorder;
+	std::string recordingFileName;
+	bool frameReady = false;
+	bool recording = false;
+	int frameCount = 0;
+	ofPixels framePixels;
+	ofImage frame;
+	const float recordingFps = 30.f;
+
 	bool showDebug = true;
 	bool drawCached = false;
 	ofFpsCounter fpsCounter = ofFpsCounter();
@@ -64,11 +74,10 @@ public:
 	SmoothValueLinear currentZoom = {2.f, 5.3f, 1.f, 8.f};
 	int currentZoomLevel = 5;
 	int lastZoomLevel = 5;
-	// ofRectangle viewWorld;
+	SmoothValueLinear currentTheta = {2.f, 0.f, -360.f, 720.f};
 
 	ofVec2f zoomCenter = {0.f, 0.f};
 	ofVec2f mouseStart;
-	// SmoothVec2Linear offsetDelta = {2.f, {0.f, 0.f}};
 	ofVec2f offsetDelta = {0.f, 0.f};
 
 	ofxAnimatableFloat viewTargetAnim;
@@ -76,6 +85,8 @@ public:
 	ofVec2f viewTarget = {0.f, 0.f};
 	ofVec2f viewStart = {0.f, 0.f};
 	bool focusViewTarget = false;
+
+	std::vector<ofVec2f> viewTargets;
 
 	std::vector<int> thetaLevels = {0, 18, 36, 54, 72, 90, 108, 126, 144, 162};
 
@@ -90,7 +101,7 @@ public:
 	std::unordered_map<int, ofVec2f> zoomWorldSizes;
 	int numberVisibleTiles = 0;
 
-	void updateCaches();
+	bool updateCaches();
 	void loadTileList();
 	void loadVisibleTiles(const View &view);
 	void preloadZoom(int level);

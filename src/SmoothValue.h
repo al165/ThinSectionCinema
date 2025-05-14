@@ -49,7 +49,7 @@ public:
 
     bool process(float deltaS)
     {
-        if (!needsProcessing)
+        if (!needsProcessing || deltaS < 0.0001f)
             return false;
 
         float diff = targetValue - currentValue;

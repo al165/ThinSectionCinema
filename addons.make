@@ -1,3 +1,3 @@
-ofxGui
 ofxThreadedImageLoader
 ofxAnimatable
+ofxFFmpegRecorder

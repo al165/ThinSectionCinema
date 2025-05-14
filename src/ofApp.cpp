@@ -12,7 +12,7 @@ void ofApp::setup()
     int fboH = ofGetHeight();
     fboA.allocate(fboW, fboH, GL_RGBA);
     fboB.allocate(fboW, fboH, GL_RGBA);
-    fboFinal.allocate(fboW, fboH, GL_RGBA);
+    fboFinal.allocate(fboW, fboH, GL_RGB);
 
     if (!blendShader.load("blend"))
         ofLogError() << "Shader not loaded!";
@@ -39,10 +39,18 @@ void ofApp::setup()
     preloadZoom(currentZoomLevel - 2);
     updateCaches();
 
+    ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps);
+    // ffmpegRecorder.setOverWrite(true);
+    // ffmpegRecorder.setVideoCodec("libx264");
+    ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
+
     ofResetElapsedTimeCounter();
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
 
+    viewTargets.emplace_back(0.96641651, 0.57013889);
+    viewTargets.emplace_back(0.51, 0.6336);
+    viewTargets.emplace_back(0.0792, 0.7590);
     // setViewTarget(globalToWorld({0.96641651, 0.57013889}), 5.f);
 }
 
@@ -51,14 +59,42 @@ void ofApp::update()
 {
     loader.dispatchMainCallbacks(32);
 
-    float dt = fpsCounter.getLastFrameSecs();
-    viewTargetAnim.update(dt);
+    float dt;
+    if (recording)
+    {
+        // update dt to target recording rate
+        if (frameReady)
+        {
+            dt = 1.f / recordingFps;
+
+            // fboFinal.readToPixels(frame);
+            // std::string filename = std::format("{:04d}.png", frameCount);
+            // std::string filepath = recordingFileName + "/" + filename;
+            // frame.save(filepath);
+
+            // save fboFinal to video buffer
+            fboFinal.readToPixels(framePixels);
+            if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
+                ffmpegRecorder.addSingleFrame(framePixels);
+            frameCount++;
+        }
+        else
+            dt = 0.f;
+    }
+    else
+    {
+        // use real-time delta
+        dt = fpsCounter.getLastFrameSecs();
+    }
+
+    if (!recording || frameReady)
+        viewTargetAnim.update(dt);
 
     currentView.offset += offsetDelta;
     offsetDelta.set(0.f, 0.f);
 
     float prevZoom = currentZoom.getValue();
-    bool zoomUpdated = currentZoom.process(fpsCounter.getLastFrameSecs());
+    bool zoomUpdated = currentZoom.process(dt);
     bool zoomingIn = prevZoom > currentZoom.getValue();
 
     bool shouldLoadZoomIn = false;
@@ -92,6 +128,41 @@ void ofApp::update()
             shouldLoadZoomOut = true;
     }
 
+    bool thetaUpdated = currentTheta.process(dt);
+    if (thetaUpdated)
+    {
+        currentView.theta = std::fmodf(currentTheta.getValue() + 180.f, 180.f);
+
+        if (currentTheta.getTargetValue() < 0.0f)
+        {
+            currentTheta.setTarget(currentTheta.getTargetValue() + 180.f);
+            currentTheta.setValue(currentTheta.getValue() + 180.f);
+        }
+        else if (currentTheta.getTargetValue() >= 180.0f)
+        {
+            currentTheta.setTarget(currentTheta.getTargetValue() - 180.f);
+            currentTheta.setValue(currentTheta.getValue() - 180.f);
+        }
+
+        currentView.thetaIndex = 0;
+        for (size_t i = 0; i < thetaLevels.size(); i++)
+        {
+            if (thetaLevels[i] > currentView.theta)
+                break;
+            currentView.thetaIndex = i;
+        }
+
+        // compute alpha blend
+        int t1 = thetaLevels[currentView.thetaIndex];
+        int t2;
+        if (currentView.thetaIndex == static_cast<int>(thetaLevels.size()) - 1)
+            t2 = thetaLevels[0] + 180;
+        else
+            t2 = thetaLevels[currentView.thetaIndex + 1];
+
+        blendAlpha = ofMap(currentView.theta, (float)t1, (float)(t2), 0.f, 1.f);
+    }
+
     currentView.viewWorld.set(
         screenToWorld({0.f, 0.f}),
         screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
@@ -105,26 +176,29 @@ void ofApp::update()
         ofVec2f tween = targetScreen * t + targetStartScreen * (1.f - t);
         offsetDelta.set(screenToWorld(tween) - currentView.offset);
 
-        // load tiles further down animation path
-        View futureView(currentView);
-        float t2 = std::sqrtf(t);
-        ofVec2f tween2 = targetScreen * t2 + targetStartScreen * (1.f - t2);
+        if (!recording)
+        {
+            // load tiles further down animation path
+            View futureView(currentView);
+            float t2 = std::sqrtf(t);
+            ofVec2f tween2 = targetScreen * t2 + targetStartScreen * (1.f - t2);
 
-        futureView.offset = screenToWorld(tween2);
-        loadVisibleTiles(futureView);
+            futureView.offset = screenToWorld(tween2);
+            loadVisibleTiles(futureView);
+        }
     }
     else
     {
         loadVisibleTiles(currentView);
     }
 
-    if (shouldLoadZoomOut)
+    if (shouldLoadZoomOut && !recording)
         preloadZoom(currentZoomLevel + 1);
 
-    if (shouldLoadZoomIn)
+    if (shouldLoadZoomIn && !recording)
         preloadZoom(currentZoomLevel - 1);
 
-    updateCaches();
+    frameReady = updateCaches();
 
     fpsCounter.update();
 }
@@ -156,7 +230,7 @@ void ofApp::draw()
     ofVec2f cursorWorld = screenToWorld({static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY())});
     ofVec2f cursorGlobal = worldToGlobal(cursorWorld);
 
-    if (showDebug)
+    if (showDebug && !recording)
     {
         ofPushMatrix();
         ofScale(currentView.scale);
@@ -210,6 +284,14 @@ void ofApp::draw()
 
     fboFinal.draw(0, 0);
 
+    if (recording)
+    {
+        ofNoFill();
+        ofSetColor(255, 0, 0);
+        ofSetLineWidth(6);
+        ofDrawRectangle(6, 6, ofGetWidth() - 12, ofGetHeight() - 12);
+    }
+
     fpsHistory.push_back(delta);
     while (fpsHistory.size() > historyLength)
         fpsHistory.pop_front();
@@ -242,8 +324,8 @@ void ofApp::draw()
         ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
         std::string status = std::format(
-            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {})",
-            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses);
+            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {}",
+            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
     }
@@ -261,38 +343,47 @@ void ofApp::exit()
 void ofApp::keyPressed(int key)
 {
     if (key == OF_KEY_LEFT)
-        currentView.theta = std::fmodf(currentView.theta + 180.f - 0.5f, 180.f);
+    {
+        float nextTheta = currentTheta.getTargetValue() - 0.3f;
+        if (!recording || frameReady)
+            currentTheta.setTarget(nextTheta);
+    }
     else if (key == OF_KEY_RIGHT)
-        currentView.theta = std::fmodf(currentView.theta + 0.5f, 180.f);
+    {
+        float nextTheta = currentTheta.getTargetValue() + 0.3f;
+        if (!recording || frameReady)
+            currentTheta.setTarget(nextTheta);
+    }
     else if (key == 'd')
         showDebug = !showDebug;
     else if (key == 'c')
         drawCached = !drawCached;
     else if (key == ' ')
-        setViewTarget(globalToWorld({ofRandom(1.f), ofRandom(1.f)}));
-
-    // compute theta index
-    int lastThetaIndex = currentView.thetaIndex;
-    currentView.thetaIndex = 0;
-    for (size_t i = 0; i < thetaLevels.size(); i++)
     {
-        if (thetaLevels[i] > currentView.theta)
-            break;
-        currentView.thetaIndex = i;
+        ofVec2f t(viewTargets.back());
+        viewTargets.pop_back();
+        setViewTarget(globalToWorld(t));
     }
+    else if (key == 'r')
+    {
+        if (!recording)
+        {
+            // initialise recording
+            recordingFileName = ofToDataPath(ofGetTimestampString("%Y-%m-%d_%H:%M:%S"), true);
+            ofLogNotice() << "Recording to " << recordingFileName;
 
-    if (currentView.thetaIndex != lastThetaIndex)
-        loadVisibleTiles(currentView);
-
-    // compute alpha blend
-    int t1 = thetaLevels[currentView.thetaIndex];
-    int t2;
-    if (currentView.thetaIndex == static_cast<int>(thetaLevels.size()) - 1)
-        t2 = thetaLevels[0] + 180;
-    else
-        t2 = thetaLevels[currentView.thetaIndex + 1];
-
-    blendAlpha = ofMap(currentView.theta, (float)t1, (float)(t2), 0.f, 1.f);
+            ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps, 8500);
+            ffmpegRecorder.setOutputPath(recordingFileName + ".mp4");
+            ffmpegRecorder.setVideoCodec("libx264");
+            ffmpegRecorder.startCustomRecord();
+        }
+        else
+        {
+            // save
+            ffmpegRecorder.stop();
+        }
+        recording = !recording;
+    }
 }
 
 //--------------------------------------------------------------
@@ -338,7 +429,7 @@ void ofApp::windowResized(int w, int h)
 {
     fboA.allocate(w, h, GL_RGBA);
     fboB.allocate(w, h, GL_RGBA);
-    fboFinal.allocate(w, h, GL_RGBA);
+    fboFinal.allocate(w, h, GL_RGB);
 
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
@@ -348,8 +439,10 @@ void ofApp::windowResized(int w, int h)
 }
 
 //--------------------------------------------------------------
-void ofApp::updateCaches()
+bool ofApp::updateCaches()
 {
+    bool frameReady = true;
+
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
     int t1 = thetaLevels[currentView.thetaIndex];
@@ -396,11 +489,14 @@ void ofApp::updateCaches()
         }
         else
         {
+            frameReady = false;
             loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
                                { cacheMisses++;
                                  cacheMain[key] = tile.getTexture(); });
         }
     }
+
+    return frameReady;
 }
 
 //--------------------------------------------------------------
@@ -509,7 +605,7 @@ void ofApp::drawTiles()
             ofTranslate(-currentView.offset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
-            if (showDebug)
+            if (showDebug && !recording)
             {
                 ofSetColor(255, 0, 0);
                 ofSetLineWidth(3.f);
@@ -526,7 +622,7 @@ void ofApp::drawTiles()
             ofTranslate(-currentView.offset);
             ofSetColor(255);
             tile.draw(key.x, key.y);
-            if (showDebug)
+            if (showDebug && !recording)
             {
                 ofSetColor(0, 255, 0);
                 ofSetLineWidth(3.f);

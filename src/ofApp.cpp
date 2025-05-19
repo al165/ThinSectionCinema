@@ -39,6 +39,10 @@ void ofApp::setup()
     preloadZoom(currentZoomLevel - 2);
     updateCaches();
 
+    std::ofstream outfile;
+    outfile.open("tween.csv", std::ofstream::out | std::ofstream::trunc);
+    outfile << "frameCount,t,currentViewX,currentViewY,deltaX,deltaY" << std::endl;
+
     ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps);
     // ffmpegRecorder.setOverWrite(true);
     // ffmpegRecorder.setVideoCodec("libx264");
@@ -64,34 +68,19 @@ void ofApp::update()
     {
         // update dt to target recording rate
         if (frameReady)
-        {
             dt = 1.f / recordingFps;
-
-            // fboFinal.readToPixels(frame);
-            // std::string filename = std::format("{:04d}.png", frameCount);
-            // std::string filepath = recordingFileName + "/" + filename;
-            // frame.save(filepath);
-
-            // save fboFinal to video buffer
-            fboFinal.readToPixels(framePixels);
-            if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
-                ffmpegRecorder.addSingleFrame(framePixels);
-            frameCount++;
-        }
         else
             dt = 0.f;
     }
     else
-    {
-        // use real-time delta
         dt = fpsCounter.getLastFrameSecs();
-    }
 
     if (!recording || frameReady)
+    {
+        currentView.offset += offsetDelta;
+        offsetDelta.set(0.f, 0.f);
         viewTargetAnim.update(dt);
-
-    currentView.offset += offsetDelta;
-    offsetDelta.set(0.f, 0.f);
+    }
 
     float prevZoom = currentZoom.getValue();
     bool zoomUpdated = currentZoom.process(dt);
@@ -172,7 +161,7 @@ void ofApp::update()
         ofVec2f targetStartScreen = worldToScreen(viewStart);
         ofVec2f targetScreen = worldToScreen(viewTarget) - ofVec2f(ofGetWidth() / 2.f, ofGetHeight() / 2.f);
 
-        float t = viewTargetAnim.val();
+        t = viewTargetAnim.val();
         ofVec2f tween = targetScreen * t + targetStartScreen * (1.f - t);
         offsetDelta.set(screenToWorld(tween) - currentView.offset);
 
@@ -280,7 +269,25 @@ void ofApp::draw()
         ofPopMatrix();
     }
 
+    // ofDrawBitmapStringHighlight(ofToString(frameCount), 0, ofGetHeight());
+
     fboFinal.end();
+
+    if (recording && frameReady)
+    {
+        // save fboFinal to video buffer
+        fboFinal.readToPixels(framePixels);
+        if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
+            ffmpegRecorder.addSingleFrame(framePixels);
+
+        std::ofstream outfile;
+        outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
+        outfile << frameCount << "," << ofToString(t) << ","
+                << ofToString(currentView.offset.x) << "," << ofToString(currentView.offset.y) << ","
+                << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
+
+        frameCount++;
+    }
 
     fboFinal.draw(0, 0);
 
@@ -337,6 +344,7 @@ void ofApp::draw()
 void ofApp::exit()
 {
     loader.stop();
+    ffmpegRecorder.stop();
 }
 
 //--------------------------------------------------------------

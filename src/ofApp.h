@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fstream>
 #include <deque>
 #include <unordered_map>
 #include <format>
@@ -85,6 +86,7 @@ public:
 	ofVec2f viewTarget = {0.f, 0.f};
 	ofVec2f viewStart = {0.f, 0.f};
 	bool focusViewTarget = false;
+	float t;
 
 	std::vector<ofVec2f> viewTargets;
 

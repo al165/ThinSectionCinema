@@ -28,9 +28,12 @@ void ofApp::setup()
     tiles.allowExt("jpg");
     tiles.listDir();
 
-    zoomCenter = {0.f, 0.f};
+    zoomCenterWorld = {0.f, 0.f};
     currentZoomLevel = std::floor(currentZoom.getValue());
     currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+    screenRectangle = ofRectangle(0.f, 0.f, static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight()));
+    screenCenter = screenRectangle.getBottomRight() / 2.f;
+    calculateViewMatrix();
 
     loader.start();
     loadTileList();
@@ -39,13 +42,16 @@ void ofApp::setup()
     preloadZoom(currentZoomLevel - 2);
     updateCaches();
 
+    ofVec2f centerWorld = globalToWorld({0.5f, 0.5f});
+    ofLogNotice() << centerWorld;
+    currentView.offsetWorld.set(centerWorld);
+    calculateViewMatrix();
+
     std::ofstream outfile;
     outfile.open("tween.csv", std::ofstream::out | std::ofstream::trunc);
     outfile << "frameCount,t,currentViewX,currentViewY,deltaX,deltaY" << std::endl;
 
     ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps);
-    // ffmpegRecorder.setOverWrite(true);
-    // ffmpegRecorder.setVideoCodec("libx264");
     ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
 
     ofResetElapsedTimeCounter();
@@ -55,7 +61,6 @@ void ofApp::setup()
     viewTargets.emplace_back(0.96641651, 0.57013889);
     viewTargets.emplace_back(0.51, 0.6336);
     viewTargets.emplace_back(0.0792, 0.7590);
-    // setViewTarget(globalToWorld({0.96641651, 0.57013889}), 5.f);
 }
 
 //--------------------------------------------------------------
@@ -77,10 +82,12 @@ void ofApp::update()
 
     if (!recording || frameReady)
     {
-        currentView.offset += offsetDelta;
+        currentView.offsetWorld += offsetDelta;
         offsetDelta.set(0.f, 0.f);
         viewTargetAnim.update(dt);
     }
+
+    calculateViewMatrix();
 
     float prevZoom = currentZoom.getValue();
     bool zoomUpdated = currentZoom.process(dt);
@@ -91,10 +98,14 @@ void ofApp::update()
 
     if (zoomUpdated)
     {
-        ofVec2f screenBefore = worldToScreen(zoomCenter);
+        ofVec2f screenBeforeZoom = worldToScreen(zoomCenterWorld);
         currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
-        ofVec2f screenAfter = worldToScreen(zoomCenter);
-        currentView.offset -= (screenBefore - screenAfter) / currentView.scale;
+        calculateViewMatrix();
+        ofVec2f screenAfterZoom = worldToScreen(zoomCenterWorld);
+
+        ofVec2f screenDeltaWorld = screenToWorld(screenAfterZoom) - screenToWorld(screenBeforeZoom);
+        currentView.offsetWorld += screenDeltaWorld;
+        calculateViewMatrix();
 
         currentZoomLevel = std::clamp(
             static_cast<int>(std::floor(currentZoom.getValue())),
@@ -104,11 +115,14 @@ void ofApp::update()
         {
             float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
             currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
-            zoomCenter *= multiplier;
-            viewTarget *= multiplier;
-            viewStart *= multiplier;
-            currentView.offset *= multiplier;
+
+            zoomCenterWorld *= multiplier;
+            rotationCenterWorld *= multiplier;
+            viewTargetWorld *= multiplier;
+            viewStartWorld *= multiplier;
+            currentView.offsetWorld *= multiplier;
             lastZoomLevel = currentZoomLevel;
+            calculateViewMatrix();
         }
 
         if (currentView.scale > 0.8 && zoomingIn)
@@ -116,6 +130,9 @@ void ofApp::update()
         else if (currentView.scale < 0.6 && !zoomingIn)
             shouldLoadZoomOut = true;
     }
+
+    rotationAngle.process(dt);
+    calculateViewMatrix();
 
     bool thetaUpdated = currentTheta.process(dt);
     if (thetaUpdated)
@@ -153,26 +170,23 @@ void ofApp::update()
     }
 
     currentView.viewWorld.set(
-        screenToWorld({0.f, 0.f}),
-        screenToWorld({static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight())}));
+        screenToWorld({0.f + 6.f, 0.f + 6.f}),
+        screenToWorld({static_cast<float>(ofGetWidth() - 12), static_cast<float>(ofGetHeight() - 12)}));
 
     if (viewTargetAnim.isAnimating() && !viewTargetAnim.getPaused())
     {
-        ofVec2f targetStartScreen = worldToScreen(viewStart);
-        ofVec2f targetScreen = worldToScreen(viewTarget) - ofVec2f(ofGetWidth() / 2.f, ofGetHeight() / 2.f);
-
         t = viewTargetAnim.val();
-        ofVec2f tween = targetScreen * t + targetStartScreen * (1.f - t);
-        offsetDelta.set(screenToWorld(tween) - currentView.offset);
+        ofVec2f tween = viewTargetWorld * t + viewStartWorld * (1.f - t);
+        offsetDelta.set(tween - currentView.offsetWorld);
 
         if (!recording)
         {
             // load tiles further down animation path
             View futureView(currentView);
             float t2 = std::sqrtf(t);
-            ofVec2f tween2 = targetScreen * t2 + targetStartScreen * (1.f - t2);
+            ofVec2f tween2 = viewTargetWorld * t2 + viewStartWorld * (1.f - t2);
 
-            futureView.offset = screenToWorld(tween2);
+            futureView.offsetWorld = screenToWorld(tween2);
             loadVisibleTiles(futureView);
         }
     }
@@ -196,7 +210,6 @@ void ofApp::update()
 void ofApp::draw()
 {
     float elapsedTime = ofGetElapsedTimef();
-    float delta = 1000.f * (elapsedTime - lastFrameTime);
     lastFrameTime = elapsedTime;
 
     ofBackground(0, 0, 255);
@@ -211,19 +224,22 @@ void ofApp::draw()
     plane.draw();
     blendShader.end();
 
-    float right = currentView.viewWorld.getRight();
-    float left = currentView.viewWorld.getLeft();
-    float top = currentView.viewWorld.getTop();
-    float bottom = currentView.viewWorld.getBottom();
-
-    ofVec2f cursorWorld = screenToWorld({static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY())});
+    ofVec2f cursor(static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY()));
+    ofVec2f cursorWorld = screenToWorld(cursor);
     ofVec2f cursorGlobal = worldToGlobal(cursorWorld);
+    const float margin = 6.f;
+    std::vector<ofVec2f> screenCorners = {
+        {margin, margin},
+        {ofGetWidth() - margin, margin},
+        {ofGetWidth() - margin, ofGetHeight() - margin},
+        {margin, ofGetHeight() - margin},
+        {margin, margin},
+    };
 
     if (showDebug && !recording)
     {
         ofPushMatrix();
-        ofScale(currentView.scale);
-        ofTranslate(-currentView.offset);
+        ofMultMatrix(viewMatrix);
 
         if (drawCached)
         {
@@ -242,8 +258,7 @@ void ofApp::draw()
                 float w = multiplier * key.width;
                 float h = multiplier * key.height;
 
-                if (x > right || key.x + key.width < left ||
-                    y > bottom || key.y + key.height < top)
+                if (!isVisible(key))
                     continue;
 
                 ofDrawRectangle(x + 2, y + 2, w - 4, h - 4);
@@ -255,15 +270,25 @@ void ofApp::draw()
         ofNoFill();
 
         ofSetColor(255, 255, 0);
-        ofDrawCircle(zoomCenter, 10 / currentView.scale);
+        ofDrawCircle(zoomCenterWorld, 10 / currentView.scale);
 
         ofSetColor(0, 255, 0);
         ofSetLineWidth(1.f);
-        ofDrawLine(cursorWorld.x, top, cursorWorld.x, bottom);
-        ofDrawLine(left, cursorWorld.y, right, cursorWorld.y);
-        ofSetColor(255, 0, 0);
+
+        ofVec2f vLineStart = screenToWorld({cursor.x, 0.f});
+        ofVec2f vLineEnd = screenToWorld({cursor.x, static_cast<float>(ofGetHeight())});
+
+        ofVec2f hLineStart = screenToWorld({0.f, cursor.y});
+        ofVec2f hLineEnd = screenToWorld({static_cast<float>(ofGetWidth()), cursor.y});
+
+        ofDrawLine(vLineStart, vLineEnd);
+        ofDrawLine(hLineStart, hLineEnd);
+        ofSetColor(255, 255, 0);
         ofSetLineWidth(6.f);
-        ofDrawRectangle(currentView.viewWorld);
+        ofBeginShape();
+        for (const auto &pt : screenCorners)
+            ofVertex(screenToWorld(pt));
+        ofEndShape();
         ofPopStyle();
 
         ofPopMatrix();
@@ -283,7 +308,7 @@ void ofApp::draw()
         std::ofstream outfile;
         outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
         outfile << frameCount << "," << ofToString(t) << ","
-                << ofToString(currentView.offset.x) << "," << ofToString(currentView.offset.y) << ","
+                << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
                 << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
 
         frameCount++;
@@ -299,34 +324,11 @@ void ofApp::draw()
         ofDrawRectangle(6, 6, ofGetWidth() - 12, ofGetHeight() - 12);
     }
 
-    fpsHistory.push_back(delta);
-    while (fpsHistory.size() > historyLength)
-        fpsHistory.pop_front();
-
     if (showDebug)
     {
-        // ofDrawBitmapStringHighlight("Frame delta (ms): " + ofToString(delta), 0, 20);
-        // const int graphHeight = 40;
-        // const int graphWidth = 120;
-        // ofSetColor(0, 200);
-        // ofFill();
-        // ofDrawRectangle(0, 20, graphWidth, graphHeight);
-        // ofSetColor(255);
-        // ofNoFill();
-        // ofDrawRectangle(0, 20, graphWidth, graphHeight);
-
-        // ofBeginShape();
-        // for (size_t i = 0; i < fpsHistory.size(); i++)
-        // {
-        //     ofVertex(
-        //         ofMap(i, 0, historyLength, 0, graphWidth),
-        //         ofMap(fpsHistory[i], 0.f, 1000.f, graphHeight + 20, 20, true));
-        // }
-        // ofEndShape();
-
         std::string coordinates = std::format(
-            "Offset: {:.2f}, {:.2f}, Mouse: world {:.2f}, {:.2f} global {:.4f}, {:.4f}, ZoomCenter {:.2f}, {:.2f}",
-            currentView.offset.x, currentView.offset.y, cursorWorld.x, cursorWorld.y, cursorGlobal.x, cursorGlobal.y, zoomCenter.x, zoomCenter.y);
+            "Offset: {:.2f}, {:.2f}, Mouse: world {:.2f}, {:.2f} global {:.4f}, {:.4f}, ZoomCenter {:.2f}, {:.2f}, rotationAngle {:.2f}",
+            currentView.offsetWorld.x, currentView.offsetWorld.y, cursorWorld.x, cursorWorld.y, cursorGlobal.x, cursorGlobal.y, zoomCenterWorld.x, zoomCenterWorld.y, rotationAngle.getValue());
 
         ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
@@ -335,6 +337,15 @@ void ofApp::draw()
             currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
+
+        std::string viewMatrixStr = std::format(
+            "┏{:9.3f} {:9.3f} {:9.3f} {:9.3f}┓\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n┗{:9.3f} {:9.3f} {:9.3f} {:9.3f}┛",
+            viewMatrix._mat[0][0], viewMatrix._mat[1][0], viewMatrix._mat[2][0], viewMatrix._mat[3][0],
+            viewMatrix._mat[0][1], viewMatrix._mat[1][1], viewMatrix._mat[2][1], viewMatrix._mat[3][1],
+            viewMatrix._mat[0][2], viewMatrix._mat[1][2], viewMatrix._mat[2][2], viewMatrix._mat[3][2],
+            viewMatrix._mat[0][3], viewMatrix._mat[1][3], viewMatrix._mat[2][3], viewMatrix._mat[3][3]);
+
+        ofDrawBitmapStringHighlight(viewMatrixStr, ofGetWidth() - 360, 20);
     }
 
     fpsCounter.newFrame();
@@ -361,6 +372,18 @@ void ofApp::keyPressed(int key)
         float nextTheta = currentTheta.getTargetValue() + 0.3f;
         if (!recording || frameReady)
             currentTheta.setTarget(nextTheta);
+    }
+    else if (key == OF_KEY_UP)
+    {
+        float nextAngle = rotationAngle.getTargetValue() + 1.f;
+        if (!recording || frameReady)
+            rotationAngle.setTarget(nextAngle);
+    }
+    else if (key == OF_KEY_DOWN)
+    {
+        float nextAngle = rotationAngle.getTargetValue() - 1.f;
+        if (!recording || frameReady)
+            rotationAngle.setTarget(nextAngle);
     }
     else if (key == 'd')
         showDebug = !showDebug;
@@ -402,18 +425,22 @@ void ofApp::mouseMoved(int x, int y)
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button)
 {
-    ofVec2f mouse(x, y);
-    ofVec2f delta = (mouse - mouseStart) / currentView.scale;
-    currentView.offset -= delta;
-    mouseStart.set(x, y);
-    // focusViewTarget = false;
+    ofVec2f currentMouse(x, y);
+
+    ofVec2f worldBeforePan = screenToWorld(lastMouse);
+    ofVec2f worldAfterPan = screenToWorld(currentMouse);
+    ofVec2f worldDelta = worldBeforePan - worldAfterPan;
+
+    currentView.offsetWorld += worldDelta;
+
+    lastMouse.set(currentMouse);
     viewTargetAnim.pause();
 }
 
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
-    mouseStart.set(x, y);
+    lastMouse.set(x, y);
 }
 
 //--------------------------------------------------------------
@@ -425,7 +452,10 @@ void ofApp::mouseReleased(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
-    zoomCenter.set(screenToWorld({(float)x, (float)y}));
+    rotationCenterWorld.set(screenToWorld({(float)x, (float)y}));
+    rotationAngle.setTarget(rotationAngle.getTargetValue() - scrollX);
+
+    zoomCenterWorld.set(screenToWorld({(float)x, (float)y}));
     currentZoom.speed = 2.f;
     currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015f);
     focusViewTarget = false;
@@ -439,6 +469,9 @@ void ofApp::windowResized(int w, int h)
     fboB.allocate(w, h, GL_RGBA);
     fboFinal.allocate(w, h, GL_RGB);
 
+    screenRectangle = ofRectangle(0.f, 0.f, static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight()));
+    screenCenter = screenRectangle.getBottomRight() / 2.f;
+
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
     plane.mapTexCoordsFromTexture(fboFinal.getTexture());
@@ -447,6 +480,44 @@ void ofApp::windowResized(int w, int h)
 }
 
 //--------------------------------------------------------------
+
+bool ofApp::isVisible(const ofRectangle &worldRect)
+{
+    // Get all 4 corners of the world rectangle
+    std::vector<ofVec2f> worldCorners = {
+        {worldRect.x, worldRect.y},
+        {worldRect.x + worldRect.width, worldRect.y},
+        {worldRect.x + worldRect.width, worldRect.y + worldRect.height},
+        {worldRect.x, worldRect.y + worldRect.height}};
+
+    // Transform to screen space
+    std::vector<ofVec4f> screenCorners;
+    for (const auto &pt : worldCorners)
+        screenCorners.push_back(ofVec4f(pt.x, pt.y, 0.f, 1.f) * viewMatrix);
+
+    // Compute screen-space bounding box of the transformed rectangle
+    float minX = screenCorners[0].x, maxX = screenCorners[0].x;
+    float minY = screenCorners[0].y, maxY = screenCorners[0].y;
+
+    for (const auto &pt : screenCorners)
+    {
+        minX = std::min(minX, pt.x);
+        maxX = std::max(maxX, pt.x);
+        minY = std::min(minY, pt.y);
+        maxY = std::max(maxY, pt.y);
+    }
+
+    ofRectangle screenBounds(minX, minY, maxX - minX, maxY - minY);
+
+    // Check for intersection with screen rectangle
+    return screenRectangle.intersects(screenBounds);
+}
+
+bool ofApp::isVisible(const TileKey &key)
+{
+    return isVisible({(float)key.x, (float)key.y, (float)key.width, (float)key.height});
+}
+
 bool ofApp::updateCaches()
 {
     bool frameReady = true;
@@ -456,11 +527,6 @@ bool ofApp::updateCaches()
     int t1 = thetaLevels[currentView.thetaIndex];
     int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
 
-    float right = currentView.viewWorld.getRight();
-    float left = currentView.viewWorld.getLeft();
-    float top = currentView.viewWorld.getTop();
-    float bottom = currentView.viewWorld.getBottom();
-
     // 1. Demote from MAIN
     for (auto it = cacheMain.begin(); it != cacheMain.end();)
     {
@@ -468,8 +534,8 @@ bool ofApp::updateCaches()
 
         if (
             (key.zoom != zoom) ||
-            (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top) ||
-            (key.theta != t1 && key.theta != t2))
+            (key.theta != t1 && key.theta != t2) ||
+            isVisible(key))
         {
             cacheSecondary.put(key, it->second);
             it = cacheMain.erase(it);
@@ -485,8 +551,8 @@ bool ofApp::updateCaches()
             continue;
 
         if (
-            (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top) ||
-            (key.theta != t1 && key.theta != t2))
+            (key.theta != t1 && key.theta != t2) ||
+            !isVisible(key))
             continue;
 
         ofTexture tile;
@@ -507,7 +573,6 @@ bool ofApp::updateCaches()
     return frameReady;
 }
 
-//--------------------------------------------------------------
 void ofApp::loadVisibleTiles(const View &view)
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
@@ -609,8 +674,7 @@ void ofApp::drawTiles()
         {
             fboA.begin();
             ofPushMatrix();
-            ofScale(currentView.scale);
-            ofTranslate(-currentView.offset);
+            ofMultMatrix(viewMatrix);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug && !recording)
@@ -626,8 +690,7 @@ void ofApp::drawTiles()
         {
             fboB.begin();
             ofPushMatrix();
-            ofScale(currentView.scale);
-            ofTranslate(-currentView.offset);
+            ofMultMatrix(viewMatrix);
             ofSetColor(255);
             tile.draw(key.x, key.y);
             if (showDebug && !recording)
@@ -644,6 +707,20 @@ void ofApp::drawTiles()
 
         numberVisibleTiles++;
     }
+}
+
+void ofApp::calculateViewMatrix()
+{
+    viewMatrix = ofMatrix4x4();
+    float angle = std::fmodf(rotationAngle.getValue(), 360.f);
+
+    viewMatrix.translate(-currentView.offsetWorld);
+    viewMatrix.scale(currentView.scale, currentView.scale, 1);
+
+    viewMatrix.rotate(angle, 0, 0, 1);
+    viewMatrix.translate(screenCenter);
+
+    viewMatrixInverted = viewMatrix.getInverse();
 }
 
 void ofApp::loadTileList()
@@ -726,9 +803,9 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewTargetAnim.pause();
     viewTargetAnim.reset(0.f);
 
-    zoomCenter.set(worldCoords);
-    viewTarget.set(zoomCenter);
-    viewStart.set(currentView.offset);
+    zoomCenterWorld.set(worldCoords);
+    viewTargetWorld.set(worldCoords);
+    viewStartWorld.set(currentView.offsetWorld);
 
     viewTargetAnim.setDuration(8.f);
     viewTargetAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
@@ -745,17 +822,19 @@ void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
         currentZoom.setTarget(1.3f);
 }
 
-ofVec2f ofApp::screenToWorld(ofVec2f coords) const
+ofVec2f ofApp::screenToWorld(const ofVec2f &coords)
 {
-    return (coords / currentView.scale) + currentView.offset;
+    ofVec4f screenCoords(coords.x, coords.y, 0.f, 1.f);
+    return screenCoords * viewMatrixInverted;
 }
 
-ofVec2f ofApp::worldToScreen(ofVec2f coords) const
+ofVec2f ofApp::worldToScreen(const ofVec2f &coords)
 {
-    return (coords - currentView.offset) * currentView.scale;
+    ofVec4f worldCoords(coords.x, coords.y, 0.f, 1.f);
+    return worldCoords * viewMatrix;
 }
 
-ofVec2f ofApp::globalToWorld(ofVec2f coords) const
+ofVec2f ofApp::globalToWorld(const ofVec2f &coords) const
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
@@ -765,13 +844,13 @@ ofVec2f ofApp::globalToWorld(ofVec2f coords) const
     }
     catch (const std::exception &e)
     {
-        std::cerr << e.what() << '\n';
+        ofLogError("globalToWorld") << e.what() << " (zoom: " << zoom << ")";
         return coords;
     }
     return coords * zoomSize;
 }
 
-ofVec2f ofApp::worldToGlobal(ofVec2f coords) const
+ofVec2f ofApp::worldToGlobal(const ofVec2f &coords) const
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
@@ -781,7 +860,7 @@ ofVec2f ofApp::worldToGlobal(ofVec2f coords) const
     }
     catch (const std::exception &e)
     {
-        std::cerr << e.what() << '\n';
+        ofLogError("worldToGlobal") << e.what() << " (zoom: " << zoom << ")";
         return coords;
     }
 

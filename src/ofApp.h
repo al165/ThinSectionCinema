@@ -15,7 +15,7 @@
 
 struct View
 {
-	ofVec2f offset;
+	ofVec2f offsetWorld;
 	float width;
 	float height;
 	float zoomLevel;
@@ -60,13 +60,16 @@ public:
 	bool showDebug = true;
 	bool drawCached = false;
 	ofFpsCounter fpsCounter = ofFpsCounter();
-	std::deque<float> fpsHistory;
-	size_t historyLength = 128;
 	float lastFrameTime;
 
 	ofDirectory tiles;
 	AsyncTextureLoader loader;
 	View currentView;
+
+	ofMatrix4x4 viewMatrix;
+	ofMatrix4x4 viewMatrixInverted;
+	ofRectangle screenRectangle;
+	ofVec2f screenCenter;
 
 	const float maxZoom = 1.f;
 	const float minZoom = 8.f;
@@ -77,16 +80,19 @@ public:
 	int lastZoomLevel = 5;
 	SmoothValueLinear currentTheta = {2.f, 0.f, -360.f, 720.f};
 
-	ofVec2f zoomCenter = {0.f, 0.f};
-	ofVec2f mouseStart;
+	ofVec2f zoomCenterWorld = {0.f, 0.f};
+	ofVec2f rotationCenterWorld = {0.f, 0.f};
+	ofVec2f lastMouse;
 	ofVec2f offsetDelta = {0.f, 0.f};
 
 	ofxAnimatableFloat viewTargetAnim;
 	ofxAnimatableFloat zoomAnim;
-	ofVec2f viewTarget = {0.f, 0.f};
-	ofVec2f viewStart = {0.f, 0.f};
+	ofVec2f viewTargetWorld = {0.f, 0.f};
+	ofVec2f viewStartWorld = {0.f, 0.f};
 	bool focusViewTarget = false;
 	float t;
+
+	SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
 	std::vector<ofVec2f> viewTargets;
 
@@ -103,6 +109,8 @@ public:
 	std::unordered_map<int, ofVec2f> zoomWorldSizes;
 	int numberVisibleTiles = 0;
 
+	bool isVisible(const ofRectangle &rect);
+	bool isVisible(const TileKey &key);
 	bool updateCaches();
 	void loadTileList();
 	void loadVisibleTiles(const View &view);
@@ -111,9 +119,11 @@ public:
 	void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
 	void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
 
-	ofVec2f screenToWorld(ofVec2f coords) const;
-	ofVec2f worldToScreen(ofVec2f coords) const;
+	ofVec2f screenToWorld(const ofVec2f &coords);
+	ofVec2f worldToScreen(const ofVec2f &coords);
 
-	ofVec2f globalToWorld(ofVec2f coords) const;
-	ofVec2f worldToGlobal(ofVec2f coords) const;
+	ofVec2f globalToWorld(const ofVec2f &coords) const;
+	ofVec2f worldToGlobal(const ofVec2f &coords) const;
+
+	void calculateViewMatrix();
 };

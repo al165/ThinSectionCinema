@@ -79,6 +79,7 @@ public:
 	int currentZoomLevel = 5;
 	int lastZoomLevel = 5;
 	SmoothValueLinear currentTheta = {2.f, 0.f, -360.f, 720.f};
+	bool cycleTheta = true;
 
 	ofVec2f zoomCenterWorld = {0.f, 0.f};
 	ofVec2f rotationCenterWorld = {0.f, 0.f};

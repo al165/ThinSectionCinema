@@ -58,9 +58,18 @@ void ofApp::setup()
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
 
-    viewTargets.emplace_back(0.96641651, 0.57013889);
-    viewTargets.emplace_back(0.51, 0.6336);
-    viewTargets.emplace_back(0.0792, 0.7590);
+    viewTargets.emplace_back(0.264165, 0.148148);
+    viewTargets.emplace_back(0.048030, 0.918519);
+    viewTargets.emplace_back(0.360225, 0.681481);
+    viewTargets.emplace_back(0.504315, 0.118519);
+    viewTargets.emplace_back(0.936585, 0.562963);
+    viewTargets.emplace_back(0.048030, 0.948148);
+    viewTargets.emplace_back(0.240150, 0.177778);
+    viewTargets.emplace_back(0.288180, 0.148148);
+    viewTargets.emplace_back(0.288180, 0.118519);
+    viewTargets.emplace_back(0.264165, 0.177778);
+    viewTargets.emplace_back(0.936585, 0.474074);
+    viewTargets.emplace_back(0.960600, 0.562963);
 }
 
 //--------------------------------------------------------------
@@ -84,6 +93,11 @@ void ofApp::update()
     {
         currentView.offsetWorld += offsetDelta;
         offsetDelta.set(0.f, 0.f);
+        if (cycleTheta)
+        {
+            float nextTheta = currentTheta.getTargetValue() + 0.1f;
+            currentTheta.setTarget(nextTheta);
+        }
         viewTargetAnim.update(dt);
     }
 
@@ -389,6 +403,8 @@ void ofApp::keyPressed(int key)
         showDebug = !showDebug;
     else if (key == 'c')
         drawCached = !drawCached;
+    else if (key == 't')
+        cycleTheta = !cycleTheta;
     else if (key == ' ')
     {
         ofVec2f t(viewTargets.back());
@@ -812,7 +828,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewTargetAnim.setCurve(AnimCurve::EASE_IN_EASE_OUT);
     viewTargetAnim.animateToAfterDelay(1.f, delayS);
 
-    currentZoom.setTarget(5.f);
+    currentZoom.setTarget(2.f);
     currentZoom.speed = .1f;
 }
 

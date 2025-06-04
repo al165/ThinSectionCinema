@@ -113,7 +113,7 @@ public:
 	bool isVisible(const ofRectangle &rect);
 	bool isVisible(const TileKey &key);
 	bool updateCaches();
-	void loadTileList();
+	void loadTileList(const std::string &set);
 	void loadVisibleTiles(const View &view);
 	void preloadZoom(int level);
 	void drawTiles();

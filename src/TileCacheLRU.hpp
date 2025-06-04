@@ -6,6 +6,12 @@
 
 #include "ofMain.h"
 
+template <class T>
+inline void hash_combine(std::size_t &seed, const T &v)
+{
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
 struct TileKey
 {
     int zoom;
@@ -15,25 +21,36 @@ struct TileKey
     int height;
     int theta;
     std::string filepath;
+    std::string tileset;
+    size_t h;
 
-    TileKey(int z, int xx, int yy, int w, int h, int t, std::string path) : zoom(z),
-                                                                            x(xx), y(yy),
-                                                                            width(w), height(h),
-                                                                            theta(t),
-                                                                            filepath(std::move(path)) {}
+    TileKey(int z, int xx, int yy, int w, int h, int t, std::string path, std::string set) : zoom(z),
+                                                                                             x(xx), y(yy),
+                                                                                             width(w), height(h),
+                                                                                             theta(t),
+                                                                                             filepath(std::move(path)),
+                                                                                             tileset(std::move(set)),
+                                                                                             h(0)
+    {
+        size_t h1 = std::hash<int>()(zoom);
+        size_t h2 = std::hash<int>()(x);
+        size_t h3 = std::hash<int>()(y);
+        size_t h4 = std::hash<int>()(theta);
+        size_t h5 = std::hash<std::string>()(tileset);
+        size_t hash = h1;
+        hash_combine(hash, h2);
+        hash_combine(hash, h3);
+        hash_combine(hash, h4);
+        hash_combine(hash, h5);
+
+        h = hash;
+    }
 
     bool operator==(const TileKey &other) const
     {
         return zoom == other.zoom && theta == other.theta && x == other.x && y == other.y && width == other.width && height == other.height;
     }
 };
-
-template <class T>
-inline void hash_combine(std::size_t &seed, const T &v)
-{
-    std::hash<T> hasher;
-    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
 
 namespace std
 {
@@ -42,15 +59,7 @@ namespace std
     {
         size_t operator()(const TileKey &k) const
         {
-            size_t h1 = std::hash<int>()(k.zoom);
-            size_t h2 = std::hash<int>()(k.x);
-            size_t h3 = std::hash<int>()(k.y);
-            size_t h4 = std::hash<int>()(k.theta);
-            size_t hash = h1;
-            hash_combine(hash, h2);
-            hash_combine(hash, h3);
-            hash_combine(hash, h4);
-            return hash;
+            return k.h;
         }
     };
 }

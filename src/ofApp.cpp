@@ -36,7 +36,7 @@ void ofApp::setup()
     calculateViewMatrix();
 
     loader.start();
-    loadTileList();
+    loadTileList("04_47");
     loadVisibleTiles(currentView);
     preloadZoom(currentZoomLevel - 1);
     preloadZoom(currentZoomLevel - 2);
@@ -739,12 +739,22 @@ void ofApp::calculateViewMatrix()
     viewMatrixInverted = viewMatrix.getInverse();
 }
 
-void ofApp::loadTileList()
+void ofApp::loadTileList(const std::string &set)
 {
-    ofLogNotice("ofApp::loadTileList()");
-    ofDirectory tileDir{"/home/arran/Desktop/04_47/"};
+    ofLogNotice() << "ofApp::loadTileList()";
+
+    std::string tileSetPath = "/home/arran/Desktop/" + set;
+    ofLogNotice() << "Loading " << tileSetPath;
+
+    ofDirectory tileDir{tileSetPath};
     tileDir.listDir();
     auto zoomLevelsDirs = tileDir.getFiles();
+
+    if (zoomLevelsDirs.size() == 0)
+    {
+        ofLogWarning() << tileSetPath << " is empty";
+        return;
+    }
 
     // get list of theta levels (as ints)
     auto rotations = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
@@ -802,7 +812,7 @@ void ofApp::loadTileList()
             for (const int t : thetaLevels)
             {
                 std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
-                tiles.emplace_back(zoom, x, y, width, height, t, filepath);
+                tiles.emplace_back(zoom, x, y, width, height, t, filepath, set);
             }
 
             zoomSize.x = std::max(zoomSize.x, static_cast<float>(x + width));

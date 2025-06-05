@@ -24,6 +24,7 @@ struct View
 	int thetaIndex; // polarisation
 	float theta;
 	ofRectangle viewWorld;
+	std::string tileset;
 };
 
 class ofApp : public ofBaseApp
@@ -71,6 +72,9 @@ public:
 	ofRectangle screenRectangle;
 	ofVec2f screenCenter;
 
+	std::string nextTileSet;
+	ofVec2f nextTileSetOffset;
+
 	const float maxZoom = 1.f;
 	const float minZoom = 8.f;
 	const int maxZoomLevel = 1;
@@ -106,12 +110,12 @@ public:
 	TileCacheLRU cacheSecondary{600};
 	int cacheMisses = 0;
 
-	std::unordered_map<int, std::vector<TileKey>> avaliableTiles;
-	std::unordered_map<int, ofVec2f> zoomWorldSizes;
+	std::unordered_map<std::string, std::unordered_map<int, std::vector<TileKey>>> avaliableTiles;
+	std::unordered_map<std::string, std::unordered_map<int, ofVec2f>> zoomWorldSizes;
 	int numberVisibleTiles = 0;
 
-	bool isVisible(const ofRectangle &rect);
-	bool isVisible(const TileKey &key);
+	bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
+	bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
 	bool updateCaches();
 	void loadTileList(const std::string &set);
 	void loadVisibleTiles(const View &view);

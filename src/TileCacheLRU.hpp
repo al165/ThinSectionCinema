@@ -22,28 +22,25 @@ struct TileKey
     int theta;
     std::string filepath;
     std::string tileset;
-    size_t h;
+    size_t hash;
 
     TileKey(int z, int xx, int yy, int w, int h, int t, std::string path, std::string set) : zoom(z),
                                                                                              x(xx), y(yy),
                                                                                              width(w), height(h),
                                                                                              theta(t),
                                                                                              filepath(std::move(path)),
-                                                                                             tileset(std::move(set)),
-                                                                                             h(0)
+                                                                                             tileset(std::move(set))
     {
         size_t h1 = std::hash<int>()(zoom);
         size_t h2 = std::hash<int>()(x);
         size_t h3 = std::hash<int>()(y);
         size_t h4 = std::hash<int>()(theta);
         size_t h5 = std::hash<std::string>()(tileset);
-        size_t hash = h1;
+        hash = h1;
         hash_combine(hash, h2);
         hash_combine(hash, h3);
         hash_combine(hash, h4);
         hash_combine(hash, h5);
-
-        h = hash;
     }
 
     bool operator==(const TileKey &other) const
@@ -59,7 +56,7 @@ namespace std
     {
         size_t operator()(const TileKey &k) const
         {
-            return k.h;
+            return k.hash;
         }
     };
 }

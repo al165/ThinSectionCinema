@@ -36,11 +36,17 @@ void ofApp::setup()
     std::optional<std::string> rootFolder = tbl["scans_root"].value<std::string>();
     std::optional<std::string> scanName = tbl["scan_name"].value<std::string>();
     std::optional<std::string> scanName2 = tbl["secondary_name"].value<std::string>();
+    recordingFolder = tbl["recording_folder"].value<std::string>();
+    recordingFileName = tbl["recording_filename"].value<std::string>();
+    std::optional<float> fps = tbl["recording_fps"].value<float>();
 
-    ofLog() << "Loading config:";
+    ofLog() << "Loading config.toml:";
     ofLog() << " - scans_root: " << rootFolder.value_or("<empty>");
     ofLog() << " - scan_name: " << scanName.value_or("<empty>");
     ofLog() << " - secondary_name: " << scanName2.value_or("<empty>");
+    ofLog() << " - recording_folder: " << recordingFolder.value_or("<empty>");
+    ofLog() << " - recording_filename: " << recordingFileName.value_or("<empty>");
+    ofLog() << " - recording_fps: " << recordingFileName.value_or("<empty>");
 
     if (!rootFolder.has_value())
     {
@@ -58,6 +64,8 @@ void ofApp::setup()
         nextTileSet.assign(scanName2.value());
 
     scanRoot.assign(rootFolder.value());
+
+    recordingFps = fps.value_or(30.f);
 
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setScale(1, -1, 1);
@@ -421,8 +429,8 @@ void ofApp::draw()
 //--------------------------------------------------------------
 void ofApp::exit()
 {
-    loader.stop();
     ffmpegRecorder.stop();
+    loader.stop();
 }
 
 //--------------------------------------------------------------
@@ -469,11 +477,16 @@ void ofApp::keyPressed(int key)
         if (!recording)
         {
             // initialise recording
-            recordingFileName = ofToDataPath(ofGetTimestampString("%Y-%m-%d_%H:%M:%S"), true);
-            ofLogNotice() << "Recording to " << recordingFileName;
+            if (recordingFileName.value_or("").length() == 0)
+                recordingFileName = ofGetTimestampString("%Y-%m-%d_%H:%M:%S");
+
+            if (!recordingFolder.has_value())
+                recordingFolder = ofToDataPath("./", true);
+
+            ofLogNotice() << "Recording to " << recordingFolder.value() + recordingFileName.value();
 
             ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps, 8500);
-            ffmpegRecorder.setOutputPath(recordingFileName + ".mp4");
+            ffmpegRecorder.setOutputPath(recordingFolder.value() + recordingFileName.value() + ".mp4");
             ffmpegRecorder.setVideoCodec("libx264");
             ffmpegRecorder.startCustomRecord();
         }

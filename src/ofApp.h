@@ -54,13 +54,14 @@ public:
 	ofPlanePrimitive plane;
 
 	ofxFFmpegRecorder ffmpegRecorder;
-	std::string recordingFileName;
+	std::optional<std::string> recordingFolder;
+	std::optional<std::string> recordingFileName;
 	bool frameReady = false;
 	bool recording = false;
 	int frameCount = 0;
 	ofPixels framePixels;
 	ofImage frame;
-	const float recordingFps = 30.f;
+	float recordingFps = 30.f;
 
 	bool showDebug = true;
 	bool drawCached = false;

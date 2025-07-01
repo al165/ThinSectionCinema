@@ -108,19 +108,6 @@ void ofApp::setup()
     ofResetElapsedTimeCounter();
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
-
-    viewTargets.emplace_back(0.264165, 0.148148);
-    viewTargets.emplace_back(0.048030, 0.918519);
-    viewTargets.emplace_back(0.360225, 0.681481);
-    viewTargets.emplace_back(0.504315, 0.118519);
-    viewTargets.emplace_back(0.936585, 0.562963);
-    viewTargets.emplace_back(0.048030, 0.948148);
-    viewTargets.emplace_back(0.240150, 0.177778);
-    viewTargets.emplace_back(0.288180, 0.148148);
-    viewTargets.emplace_back(0.288180, 0.118519);
-    viewTargets.emplace_back(0.264165, 0.177778);
-    viewTargets.emplace_back(0.936585, 0.474074);
-    viewTargets.emplace_back(0.960600, 0.562963);
 }
 
 //--------------------------------------------------------------
@@ -468,8 +455,8 @@ void ofApp::keyPressed(int key)
         cycleTheta = !cycleTheta;
     else if (key == ' ')
     {
-        ofVec2f t(viewTargets.back());
-        viewTargets.pop_back();
+        ofVec2f t(viewTargets[currentView.tileset].back());
+        viewTargets[currentView.tileset].pop_back();
         setViewTarget(globalToWorld(t));
     }
     else if (key == 'r')
@@ -928,6 +915,28 @@ void ofApp::loadTileList(const std::string &set)
         avaliableTiles[set][zoom] = tiles;
         zoomWorldSizes[set][zoom] = zoomSize;
     }
+
+    // load POI list
+    if (csv.load(scanRoot + set + "/poi.csv"))
+    {
+        ofLogNotice() << "Found poi.csv";
+        bool skip_header = true;
+        for (auto row : csv)
+        {
+            if (skip_header)
+            {
+                skip_header = false;
+                continue;
+            }
+
+            float x = row.getFloat(1);
+            float y = row.getFloat(2);
+
+            viewTargets[set].emplace_back(x, y);
+        }
+    }
+    else
+        ofLogNotice() << "poi.csv not found.";
 }
 
 void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)

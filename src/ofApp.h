@@ -10,6 +10,7 @@
 #include "TileCacheLRU.hpp"
 #include "AsyncTextureLoader.hpp"
 
+#include "ofxCsv.h"
 #include "ofxFFmpegRecorder.h"
 #include "ofxAnimatableFloat.h"
 
@@ -47,6 +48,7 @@ public:
 	void windowResized(int w, int h);
 
 	std::string scanRoot;
+	ofxCsv csv;
 
 	ofFbo fboA, fboB, fboFinal;
 	ofShader blendShader;
@@ -104,7 +106,7 @@ public:
 
 	SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
-	std::vector<ofVec2f> viewTargets;
+	std::unordered_map<std::string, std::vector<ofVec2f>> viewTargets;
 
 	std::vector<int> thetaLevels = {0, 18, 36, 54, 72, 90, 108, 126, 144, 162};
 

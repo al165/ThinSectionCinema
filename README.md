@@ -12,6 +12,7 @@ Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file 
 3. clone the following addons into `openFrameworks/addons/`
     - [ofxAnimatable](https://github.com/armadillu/ofxAnimatable)
     - [ofxFFmpegRecorder](https://github.com/Furkanzmc/ofxFFmpegRecorder)
+    - [ofxCsv](https://github.com/paulvollmer/ofxCsv.git)
 4. in this repo run `make -j8` to build, and `./bin/thinsections` to run.
 
 ## Tile format
@@ -30,7 +31,12 @@ The tiles need to be jpgs in the following folder structure:
   - 4.0
   - 8.0
   - ...
+  - poi.csv                    <-- CSV file containing coordinates of points of interest
 ```
+
+The (optional) `poi.csv` file should have the following headings: `index, x, y, theta`.
+`x` and `y` are normalised floats in `[0, 1]`.
+`theta` is optional and unused for now.
 
 ## Config
 

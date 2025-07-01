@@ -3,6 +3,8 @@
 Tile viewer and movie maker for cinematic Thin Section exploration.
 Made with [openFrameworks](https://openframeworks.cc/).
 
+![Screenshot of a thin section scan with cross polarisation.](thinsection.png)
+
 Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file for parsing config files.
 
 ## Building

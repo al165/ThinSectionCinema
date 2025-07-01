@@ -5,7 +5,6 @@
 # http://git-scm.com/docs/gitignore
 
 *.mp4
-*.png
 *.csv
 
 

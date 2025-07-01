@@ -2,6 +2,9 @@ scans_root = "/absolute/path/to/scans/root/folder"  # REQUIRED must have a trail
 scan_name = "name_of_scan_folder"                   # REQUIRED
 secondary_name = ""                                 # OPTIONAL
 
+min_moving_time = 8.0
+max_moving_time = 45.0
+
 recording_folder = ""
 recording_filename = ""
 recording_fps = 30.0

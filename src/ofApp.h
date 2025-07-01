@@ -97,6 +97,7 @@ public:
 	ofVec2f lastMouse;
 	ofVec2f offsetDelta = {0.f, 0.f};
 
+	float minMovingTime, maxMovingTime;
 	ofxAnimatableFloat viewTargetAnim;
 	ofxAnimatableFloat zoomAnim;
 	ofVec2f viewTargetWorld = {0.f, 0.f};

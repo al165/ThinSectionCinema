@@ -39,6 +39,8 @@ void ofApp::setup()
     recordingFolder = tbl["recording_folder"].value<std::string>();
     recordingFileName = tbl["recording_filename"].value<std::string>();
     std::optional<float> fps = tbl["recording_fps"].value<float>();
+    std::optional<float> minMove = tbl["min_moving_time"].value<float>();
+    std::optional<float> maxMove = tbl["max_moving_time"].value<float>();
 
     ofLog() << "Loading config.toml:";
     ofLog() << " - scans_root: " << rootFolder.value_or("<empty>");
@@ -66,6 +68,8 @@ void ofApp::setup()
     scanRoot.assign(rootFolder.value());
 
     recordingFps = fps.value_or(30.f);
+    minMovingTime = minMove.value_or(8.f);
+    maxMovingTime = maxMove.value_or(8.f);
 
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setScale(1, -1, 1);
@@ -948,7 +952,15 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewTargetWorld.set(worldCoords);
     viewStartWorld.set(currentView.offsetWorld);
 
-    viewTargetAnim.setDuration(8.f);
+    // set duration based on distance to target
+    float dist = worldToGlobal(viewStartWorld).distance(worldToGlobal(viewTargetWorld));
+    // normalise where corner-to-corner is 1.0
+    dist /= sqrtf(2);
+    ofLogNotice() << "Normalised distance to target: " << dist;
+    float movementTime = max(minMovingTime, maxMovingTime * dist);
+    ofLogNotice() << "Movement time: " << movementTime;
+
+    viewTargetAnim.setDuration(movementTime);
     viewTargetAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
     viewTargetAnim.setCurve(AnimCurve::EASE_IN_EASE_OUT);
     viewTargetAnim.animateToAfterDelay(1.f, delayS);

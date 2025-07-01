@@ -51,6 +51,7 @@ Copy `config_template.toml` to `bin/data/config.toml` and edit with the followin
 - `scans_root` (required) Root folder of all scans. Must end in '/';
 - `scan_name` (required) Name of the scan folder to load.
 - `secondary_name` (optional) Name of the second scan folder to load (e.g. for transitions).
+- `min_moving_time`, `max_moving_time` (optional) Defaults 8.0, 45.0. Min/Maximum time (in seconds) to move between targets.
 - `recording_folder` (optional) Absolute path to folder that recordings will save to.
 - `recording_filename` (optional) Name of saved recording (without `.mp4`). If not specified, the default name will be the time and date.
 - `recording_fps` (optional) Default 30. Frames per second of output recording.

@@ -7,7 +7,7 @@ Made with [openFrameworks](https://openframeworks.cc/).
 
 Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file for parsing config files.
 
-## Building
+## Build instructions
 
 1. clone [openFrameworks](https://github.com/openframeworks/openFrameworks)
 2. clone this repository into `openFrameworks/apps/myApps/`
@@ -15,26 +15,30 @@ Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file 
     - [ofxAnimatable](https://github.com/armadillu/ofxAnimatable)
     - [ofxFFmpegRecorder](https://github.com/Furkanzmc/ofxFFmpegRecorder)
     - [ofxCsv](https://github.com/paulvollmer/ofxCsv.git)
-4. in this repo run `make -j8` to build, and `./bin/thinsections` to run.
+4. in this repo run `make -j8` to build
+5. setup a tile scan folder of images and the `config.toml`
+6. `./bin/thinsections` to run.
 
-## Tile format
+## Tile scans folder format
 
 The tiles need to be jpgs in the following folder structure:
 
 ```directory
-- <scan_name>                  <-- The name of the sample
-  - 2.0                        <-- Zoom level (powers of 2)
-    - 0.0                      <-- Polarisation angle (0 - 180 degrees)
-        - <x>x<y>x<w>x<h>.jpg  <-- Tile name
-        - ...
-    - 18.0
-    - 36.0
-    - ...
-  - 4.0
-  - 8.0
-  - ...
-  - poi.csv                    <-- CSV file containing coordinates of points of interest
+<scan_name>                       <-- The name of the sample 
+├── 2.0                           <-- Zoom level (powers of 2)
+│   ├── 0.0                       <-- Polarisation angle (degrees)
+│   │   ├── <x>x<y>x<w>x<h>.jpg   <-- Tile name
+│   │   └── ...
+│   ├── 18.0
+│   ├── 36.0
+│   └── ...
+├── 4.0
+├── 8.0
+├── ...
+└── poi.csv                       <-- Coordinates of points of interest
 ```
+
+The jpgs filenames should contain the position and size (in pixels) for that zoom level.
 
 The (optional) `poi.csv` file should have the following headings: `index, x, y, theta`.
 `x` and `y` are normalised floats in `[0, 1]`.

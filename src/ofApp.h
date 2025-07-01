@@ -13,6 +13,8 @@
 #include "ofxFFmpegRecorder.h"
 #include "ofxAnimatableFloat.h"
 
+#include <toml.hpp>
+
 struct View
 {
 	ofVec2f offsetWorld;
@@ -43,6 +45,8 @@ public:
 	void mouseReleased(int x, int y, int button);
 	void mouseScrolled(int x, int y, float scrollX, float scrollY);
 	void windowResized(int w, int h);
+
+	std::string scanRoot;
 
 	ofFbo fboA, fboB, fboFinal;
 	ofShader blendShader;

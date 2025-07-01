@@ -3,6 +3,8 @@
 Tile viewer and movie maker for cinematic Thin Section exploration.
 Made with [openFrameworks](https://openframeworks.cc/).
 
+Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file for parsing config files.
+
 ## Building
 
 1. clone [openFrameworks](https://github.com/openframeworks/openFrameworks)
@@ -32,4 +34,12 @@ The tiles need to be jpgs in the following folder structure:
 
 ## Config
 
-Coming soon
+Copy `config_template.toml` to `bin/data/config.toml` and edit with the following options:
+
+- `scans_root` (required) Root folder of all scans. Must end in '/';
+- `scan_name` (required) Name of the scan folder to load.
+- `secondary_name` (optional) Name of the second scan folder to load (e.g. for transitions).
+
+## License
+
+Released under [GNU General Public License v3](LICENSE)

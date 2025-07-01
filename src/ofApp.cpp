@@ -19,6 +19,46 @@ void ofApp::setup()
     else
         ofLogNotice() << "Shader loaded successfully";
 
+    // Load config
+    toml::table tbl;
+    try
+    {
+        tbl = toml::parse_file(ofToDataPath("config.toml", true));
+        std::cout << tbl << "\n";
+    }
+    catch (const toml::parse_error &err)
+    {
+        std::cerr << "Parsing failed:\n"
+                  << err << "\n";
+        return;
+    }
+
+    std::optional<std::string> rootFolder = tbl["scans_root"].value<std::string>();
+    std::optional<std::string> scanName = tbl["scan_name"].value<std::string>();
+    std::optional<std::string> scanName2 = tbl["secondary_name"].value<std::string>();
+
+    ofLog() << "Loading config:";
+    ofLog() << " - scans_root: " << rootFolder.value_or("<empty>");
+    ofLog() << " - scan_name: " << scanName.value_or("<empty>");
+    ofLog() << " - secondary_name: " << scanName2.value_or("<empty>");
+
+    if (!rootFolder.has_value())
+    {
+        ofLogError() << "config `scans_root` is empty!";
+        return;
+    }
+
+    if (!scanName.has_value())
+    {
+        ofLogError() << "config `scan_name` is empty!";
+        return;
+    }
+
+    if (scanName2.has_value())
+        nextTileSet.assign(scanName2.value());
+
+    scanRoot.assign(rootFolder.value());
+
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setScale(1, -1, 1);
     plane.setPosition(0, ofGetHeight(), 0);
@@ -32,23 +72,18 @@ void ofApp::setup()
     calculateViewMatrix();
 
     loader.start();
-    currentView.tileset = "04_47";
-    nextTileSet = "18_7_96_4";
+    currentView.tileset = scanName.value();
+
     loadTileList(currentView.tileset);
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f currentWoldSize = zoomWorldSizes[currentView.tileset][zoom];
     nextTileSetOffset = ofVec2f(currentWoldSize.x, 0.f);
-    loadTileList(nextTileSet);
+    if (nextTileSet.length() > 0)
+        loadTileList(nextTileSet);
     loadVisibleTiles(currentView);
     preloadZoom(currentZoomLevel - 1);
     preloadZoom(currentZoomLevel - 2);
     updateCaches();
-
-    // TEST TileKey hash:
-    TileKey k1(3, 0, 0, 128, 128, 0, "path", "04_47");
-    TileKey k2(3, 0, 0, 128, 128, 0, "path", "18_7_96_4");
-
-    ofLogNotice() << "TileKey Hash test: k1.hash = " << k1.hash << ", k2.hash = " << k2.hash;
 
     ofVec2f centerWorld = globalToWorld({0.5f, 0.5f});
     ofLogNotice() << centerWorld;
@@ -801,7 +836,7 @@ void ofApp::loadTileList(const std::string &set)
 {
     ofLogNotice() << "ofApp::loadTileList()";
 
-    std::string tileSetPath = "/home/arran/Desktop/" + set;
+    std::string tileSetPath = scanRoot + set;
     ofLogNotice() << "Loading " << tileSetPath;
 
     ofDirectory tileDir{tileSetPath};
@@ -928,7 +963,7 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords) const
     }
     catch (const std::exception &e)
     {
-        ofLogError("globalToWorld") << e.what() << " (zoom: " << zoom << ", tileset: " << ")";
+        // ofLogError("globalToWorld") << e.what() << " (zoom: " << zoom << ", tileset: " << ")";
         return coords;
     }
     return coords * zoomSize;
@@ -944,7 +979,7 @@ ofVec2f ofApp::worldToGlobal(const ofVec2f &coords) const
     }
     catch (const std::exception &e)
     {
-        ofLogError("worldToGlobal") << e.what() << " (zoom: " << zoom << ")";
+        // ofLogError("worldToGlobal") << e.what() << " (zoom: " << zoom << ")";
         return coords;
     }
 

@@ -8,12 +8,14 @@
 *.png
 *.csv
 
+
 ###########################
 # ignore generated binaries
 # but not the data folder
 ###########################
 
 /bin/*
+/bin/data/*.toml
 !/bin/data/
 
 #########

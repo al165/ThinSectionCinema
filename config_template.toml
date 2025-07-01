@@ -1,0 +1,3 @@
+scans_root = "/absolute/path/to/scans/root/folder"  # REQUIRED must have a trailing '/'
+scan_name = "name_of_scan_folder"                   # REQUIRED
+secondary_name = ""                                 # OPTIONAL

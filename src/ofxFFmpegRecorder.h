@@ -1,5 +1,6 @@
 #pragma once
 // openFrameworks
+#include <memory>
 #include "ofTypes.h"
 // #include "ofBaseSoundStream.h"
 #include "ofVideoBaseTypes.h"

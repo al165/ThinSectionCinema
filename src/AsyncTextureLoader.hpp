@@ -65,7 +65,6 @@ protected:
             pendingSet.erase(path);
             lock.unlock();
 
-            // ofPixels pixels;
             ofImage tile;
             if (!tile.load(path))
             {
@@ -75,9 +74,7 @@ protected:
 
             std::lock_guard<std::mutex> cbLock(callbackMutex);
             mainThreadCallbacks.push([=]()
-                                     {
-                                        // ofTexture tex = tile.getTexture();
-                                        callback(path, tile); });
+                                     { callback(path, tile); });
         }
     }
 

@@ -459,9 +459,16 @@ void ofApp::keyPressed(int key)
         cycleTheta = !cycleTheta;
     else if (key == ' ')
     {
-        ofVec2f t(viewTargets[currentView.tileset].back());
-        viewTargets[currentView.tileset].pop_back();
-        setViewTarget(globalToWorld(t));
+        try
+        {
+            ofVec2f t(viewTargets[currentView.tileset].back());
+            viewTargets[currentView.tileset].pop_back();
+            setViewTarget(globalToWorld(t));
+        }
+        catch (const std::exception &e)
+        {
+            return;
+        }
     }
     else if (key == 'r')
     {
@@ -606,11 +613,7 @@ bool ofApp::updateCaches()
         TileKey key = it->first;
 
         if (
-            (key.zoom != zoom) ||
-            (key.theta != t1 && key.theta != t2) ||
-            (key.tileset != currentView.tileset && key.tileset != nextTileSet) ||
-            (key.tileset == currentView.tileset && !isVisible(key)) ||
-            (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset)))
+            (key.zoom != zoom) || (key.theta != t1 && key.theta != t2) || (key.tileset != currentView.tileset && key.tileset != nextTileSet) || (key.tileset == currentView.tileset && !isVisible(key)) || (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset)))
         {
             cacheSecondary.put(key, it->second);
             it = cacheMain.erase(it);
@@ -626,9 +629,7 @@ bool ofApp::updateCaches()
             continue;
 
         if (
-            (key.theta != t1 && key.theta != t2) ||
-            (key.tileset != currentView.tileset && key.tileset != nextTileSet) ||
-            (key.tileset == currentView.tileset && !isVisible(key))
+            (key.theta != t1 && key.theta != t2) || (key.tileset != currentView.tileset && key.tileset != nextTileSet) || (key.tileset == currentView.tileset && !isVisible(key))
             // (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset))
         )
             continue;
@@ -654,8 +655,7 @@ bool ofApp::updateCaches()
             continue;
 
         if (
-            (key.theta != t1 && key.theta != t2) ||
-            (key.tileset != currentView.tileset && key.tileset != nextTileSet) ||
+            (key.theta != t1 && key.theta != t2) || (key.tileset != currentView.tileset && key.tileset != nextTileSet) ||
             // (key.tileset == currentView.tileset && !isVisible(key))
             (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset)))
             continue;
@@ -699,8 +699,7 @@ void ofApp::loadVisibleTiles(const View &view)
 
     for (const TileKey &key : avaliableTiles[view.tileset][zoom])
     {
-        if (key.x >= right || key.x + key.width <= left ||
-            key.y >= bottom || key.y + key.height <= top)
+        if (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top)
             continue;
 
         if (key.theta != t && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1)
@@ -738,8 +737,7 @@ void ofApp::preloadZoom(int level)
         if (key.theta != t1 && key.theta != t2)
             continue;
 
-        if (key.x >= right || (key.x + key.width) <= left ||
-            key.y >= bottom || (key.y + key.height) <= top)
+        if (key.x >= right || (key.x + key.width) <= left || key.y >= bottom || (key.y + key.height) <= top)
             continue;
 
         if (!cacheSecondary.contains(key, false))
@@ -870,7 +868,7 @@ void ofApp::loadTileList(const std::string &set)
     ofLogNotice() << "- Theta levels:";
     std::string levels = "";
     for (const int t : thetaLevels)
-        levels += " " + t;
+        levels += " " + ofToString(t);
 
     ofLogNotice() << levels;
 
@@ -889,7 +887,7 @@ void ofApp::loadTileList(const std::string &set)
         tiles.listDir();
 
         auto tileFiles = tiles.getFiles();
-        ofLogNotice() << "  - Found " << tileFiles.size() + " tiles";
+        ofLogNotice() << "  - Found " << ofToString(tileFiles.size()) + " tiles";
 
         ofVec2f zoomSize(0.f, 0.f);
 

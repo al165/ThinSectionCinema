@@ -1,4 +1,3 @@
 ofxThreadedImageLoader
 ofxAnimatable
-ofxFFmpegRecorder
 ofxCsv

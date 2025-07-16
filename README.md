@@ -7,13 +7,14 @@ Made with [openFrameworks](https://openframeworks.cc/).
 
 Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file for parsing config files.
 
+`ofxFFmpegRecorder` code adapted from [NickHardeman/ofxFFmpegRecorder](https://github.com/NickHardeman/ofxFFmpegRecorder).
+
 ## Build instructions
 
 1. clone [openFrameworks](https://github.com/openframeworks/openFrameworks)
 2. clone this repository into `openFrameworks/apps/myApps/`
 3. clone the following addons into `openFrameworks/addons/`
     - [ofxAnimatable](https://github.com/armadillu/ofxAnimatable)
-    - [ofxFFmpegRecorder](https://github.com/Furkanzmc/ofxFFmpegRecorder)
     - [ofxCsv](https://github.com/paulvollmer/ofxCsv.git)
 4. in this repo run `make -j8` to build
 5. setup a tile scan folder of images and the `config.toml`

@@ -65,6 +65,10 @@ public:
     ofImage frame;
     float recordingFps = 30.f;
 
+    bool recordPath = false;
+    float recordPathDt = 1.f;
+    float lastPathT = -recordPathDt * 2.f;
+
     bool showDebug = true;
     bool drawCached = false;
     ofFpsCounter fpsCounter = ofFpsCounter();
@@ -103,7 +107,7 @@ public:
     ofVec2f viewTargetWorld = {0.f, 0.f};
     ofVec2f viewStartWorld = {0.f, 0.f};
     bool focusViewTarget = false;
-    float t;
+    float time;
 
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 

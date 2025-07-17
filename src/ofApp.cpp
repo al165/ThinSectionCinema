@@ -24,7 +24,7 @@ void ofApp::setup()
     try
     {
         tbl = toml::parse_file(ofToDataPath("config.toml", true));
-        std::cout << tbl << "\n";
+        // std::cout << tbl << "\n";
     }
     catch (const toml::parse_error &err)
     {
@@ -42,13 +42,13 @@ void ofApp::setup()
     std::optional<float> minMove = tbl["min_moving_time"].value<float>();
     std::optional<float> maxMove = tbl["max_moving_time"].value<float>();
 
-    ofLog() << "Loading config.toml:";
-    ofLog() << " - scans_root: " << rootFolder.value_or("<empty>");
-    ofLog() << " - scan_name: " << scanName.value_or("<empty>");
-    ofLog() << " - secondary_name: " << scanName2.value_or("<empty>");
-    ofLog() << " - recording_folder: " << recordingFolder.value_or("<empty>");
-    ofLog() << " - recording_filename: " << recordingFileName.value_or("<empty>");
-    ofLog() << " - recording_fps: " << recordingFileName.value_or("<empty>");
+    ofLogNotice() << "Loading config.toml:";
+    ofLogNotice() << " - scans_root: " << rootFolder.value_or("<empty>");
+    ofLogNotice() << " - scan_name: " << scanName.value_or("<empty>");
+    ofLogNotice() << " - secondary_name: " << scanName2.value_or("<empty>");
+    ofLogNotice() << " - recording_folder: " << recordingFolder.value_or("<empty>");
+    ofLogNotice() << " - recording_filename: " << recordingFileName.value_or("<empty>");
+    ofLogNotice() << " - recording_fps: " << fps.value();
 
     if (!rootFolder.has_value())
     {
@@ -106,6 +106,10 @@ void ofApp::setup()
     outfile.open("tween.csv", std::ofstream::out | std::ofstream::trunc);
     outfile << "frameCount,t,currentViewX,currentViewY,deltaX,deltaY" << std::endl;
 
+    std::ofstream pathfile;
+    pathfile.open("path.csv");
+    pathfile << "t,leftX,leftY,rightX,rightY" << std::endl;
+
     ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps);
     ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
 
@@ -121,15 +125,11 @@ void ofApp::update()
 
     float dt;
     if (recording)
-    {
-        // update dt to target recording rate
-        if (frameReady)
-            dt = 1.f / recordingFps;
-        else
-            dt = 0.f;
-    }
+        dt = frameReady ? (1.f / recordingFps) : 0.f;
     else
         dt = fpsCounter.getLastFrameSecs();
+
+    // t += dt;
 
     if (!recording || frameReady)
     {
@@ -232,7 +232,7 @@ void ofApp::update()
 
     if (viewTargetAnim.isAnimating() && !viewTargetAnim.getPaused())
     {
-        t = viewTargetAnim.val();
+        float t = viewTargetAnim.val();
         ofVec2f tween = viewTargetWorld * t + viewStartWorld * (1.f - t);
         offsetDelta.set(tween - currentView.offsetWorld);
 
@@ -360,7 +360,7 @@ void ofApp::draw()
         ofPopMatrix();
     }
 
-    // ofDrawBitmapStringHighlight(ofToString(frameCount), 0, ofGetHeight());
+    // ofDrawBitmapStringHighlight(ofToString(frameCount) + ", " + ofToString(time), 0, ofGetHeight());
 
     fboFinal.end();
 
@@ -371,13 +371,30 @@ void ofApp::draw()
         if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
             ffmpegRecorder.addSingleFrame(framePixels);
 
+        if (time >= lastPathT + recordPathDt)
+        {
+            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}));
+            ofVec2f rightGlobal = worldToGlobal(screenToWorld({ofGetWidth(), ofGetHeight() / 2.f}));
+
+            std::ofstream outfile;
+            outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
+
+            outfile << ofToString(time) << ","
+                    << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
+                    << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y)
+                    << std::endl;
+
+            lastPathT += recordPathDt;
+        }
+
         std::ofstream outfile;
         outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
-        outfile << frameCount << "," << ofToString(t) << ","
+        outfile << frameCount << "," << ofToString(time) << ","
                 << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
                 << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
 
         frameCount++;
+        time += 1.f / recordingFps;
     }
 
     fboFinal.draw(0, 0);
@@ -399,8 +416,8 @@ void ofApp::draw()
         ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
         std::string status = std::format(
-            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {}",
-            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady);
+            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {:2}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, t {:.2f}",
+            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, time);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
@@ -483,15 +500,20 @@ void ofApp::keyPressed(int key)
 
             ofLogNotice() << "Recording to " << recordingFolder.value() + recordingFileName.value();
 
-            ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps, 8500);
+            ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps, 10000);
             ffmpegRecorder.setOutputPath(recordingFolder.value() + recordingFileName.value() + ".mp4");
             ffmpegRecorder.setVideoCodec("libx264");
+            ffmpegRecorder.addAdditionalInputArgument("-hide_banner");
+            ffmpegRecorder.addAdditionalInputArgument("-loglevel error");
             ffmpegRecorder.startCustomRecord();
+
+            time = 0.f;
         }
         else
         {
             // save
             ffmpegRecorder.stop();
+            time = 0.f;
         }
         recording = !recording;
     }
@@ -684,7 +706,7 @@ void ofApp::loadVisibleTiles(const View &view)
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
     // preload thetas CW and CCW from current
-    int t = thetaLevels[view.thetaIndex];
+    int theta = thetaLevels[view.thetaIndex];
     int tCW1 = thetaLevels[(view.thetaIndex + 1) % thetaLevels.size()];
     int tCW2 = thetaLevels[(view.thetaIndex + 2) % thetaLevels.size()];
     int tCCW1 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
@@ -702,7 +724,7 @@ void ofApp::loadVisibleTiles(const View &view)
         if (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top)
             continue;
 
-        if (key.theta != t && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1)
+        if (key.theta != theta && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1)
             continue;
 
         if (cacheMain.count(key))

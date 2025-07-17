@@ -83,7 +83,7 @@ void ofApp::setup()
     screenCenter = screenRectangle.getBottomRight() / 2.f;
     calculateViewMatrix();
 
-    loader.start();
+    // loader.start();
     currentView.tileset = scanName.value();
 
     loadTileList(currentView.tileset);

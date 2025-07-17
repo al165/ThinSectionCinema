@@ -1,49 +1,49 @@
-#pragma once
-
 #include "ofMain.h"
-#include <queue>
 #include <unordered_set>
-#include <mutex>
-#include <condition_variable>
-#include <thread>
-#include <atomic>
-#include <functional>
 
 class AsyncTextureLoader : public ofThread
 {
 public:
     using LoadCallback = std::function<void(const std::string &, ofImage)>;
 
-    void requestLoad(const std::string &path, LoadCallback callback)
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (pendingSet.count(path))
-            return; // deduplicate
-
-        loadQueue.push({path, callback});
-        pendingSet.insert(path);
-        condition.notify_one();
-    }
-
-    void start()
+    AsyncTextureLoader()
     {
         startThread();
     }
 
+    ~AsyncTextureLoader()
+    {
+        stop();
+    }
+
+    void requestLoad(const std::string &path, LoadCallback callback)
+    {
+        if (pendingSet.count(path))
+            return;
+
+        pendingSet.insert(path);
+        loadRequests.send({path, callback});
+    }
+
     void stop()
     {
-        stopThread();
-        condition.notify_all();
+        loadRequests.close();
+        waitForThread();
     }
 
     void dispatchMainCallbacks(int maxCount)
     {
-        std::lock_guard<std::mutex> lock(callbackMutex);
         int n = 0;
-        while (!mainThreadCallbacks.empty() && n < maxCount)
+        LoadResult result;
+        while (n < maxCount && loadResults.tryReceive(result))
         {
-            mainThreadCallbacks.front()();
-            mainThreadCallbacks.pop();
+            auto &[path, pixels, callback] = result;
+
+            // Allocate and upload to GPU on main thread
+            ofImage tile;
+            tile.setFromPixels(pixels);
+
+            callback(path, tile);
             n++;
         }
     }
@@ -51,31 +51,24 @@ public:
 protected:
     void threadedFunction() override
     {
-        while (isThreadRunning())
+        LoadRequest request;
+        while (loadRequests.receive(request))
         {
-            std::unique_lock<std::mutex> lock(mutex);
-            condition.wait(lock, [&]()
-                           { return !loadQueue.empty() || !isThreadRunning(); });
+            auto &[path, callback] = request;
 
-            if (!isThreadRunning())
-                break;
-
-            auto [path, callback] = loadQueue.front();
-            loadQueue.pop();
-            pendingSet.erase(path);
-            lock.unlock();
-
-            ofImage tile;
-            if (!tile.load(path))
+            ofPixels loadedPixels;
+            if (!ofLoadImage(loadedPixels, path))
             {
                 ofLogError() << "AsyncTextureLoader failed to load: " << path;
+                pendingSet.erase(path);
                 continue;
             }
 
-            std::lock_guard<std::mutex> cbLock(callbackMutex);
-            mainThreadCallbacks.push([=]()
-                                     { callback(path, tile); });
+            loadResults.send({path, loadedPixels, callback});
+            pendingSet.erase(path);
         }
+
+        loadResults.close();
     }
 
 private:
@@ -85,11 +78,15 @@ private:
         LoadCallback callback;
     };
 
-    std::queue<LoadRequest> loadQueue;
-    std::unordered_set<std::string> pendingSet;
-    std::mutex mutex;
-    std::condition_variable condition;
+    struct LoadResult
+    {
+        std::string path;
+        ofPixels pixels;
+        LoadCallback callback;
+    };
 
-    std::queue<std::function<void()>> mainThreadCallbacks;
-    std::mutex callbackMutex;
+    ofThreadChannel<LoadRequest> loadRequests;
+    ofThreadChannel<LoadResult> loadResults;
+
+    std::unordered_set<std::string> pendingSet;
 };

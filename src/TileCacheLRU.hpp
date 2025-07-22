@@ -115,8 +115,12 @@ public:
         if (cache.size() >= maxSize)
         {
             TileKey oldKey = usage.back();
-            usage.pop_back();
-            cache.erase(oldKey);
+            auto it = cache.find(oldKey);
+            if (it != cache.end())
+            {
+                usage.erase(it->second.second); // erase from list using stored iterator
+                cache.erase(it);                // then erase from cache
+            }
         }
         usage.push_front(key);
         cache[key] = {img, usage.begin()};
@@ -124,8 +128,12 @@ public:
 
     void erase(const TileKey &key)
     {
-        cache.erase(key);
-        usage.remove(key);
+        auto it = cache.find(key);
+        if (it != cache.end())
+        {
+            usage.erase(it->second.second);
+            cache.erase(it);
+        }
     }
 
     size_t size()

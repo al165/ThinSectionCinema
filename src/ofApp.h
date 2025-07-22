@@ -16,6 +16,9 @@
 
 #include <toml.hpp>
 
+using Theta = int;
+using Zoom = int;
+
 struct View
 {
     ofVec2f offsetWorld;
@@ -24,10 +27,33 @@ struct View
     float zoomLevel;
     float scale;
     float rotation; // view rotation
-    int thetaIndex; // polarisation
     float theta;
     ofRectangle viewWorld;
-    std::string tileset;
+    // std::string tileset;
+};
+
+struct TileSet
+{
+    std::string name;
+    ofFbo fboA, fboB, fboMain;
+    ofVec2f offset;
+    Theta t1, t2;
+    float blendAlpha = 0.f;
+    std::vector<Theta> thetaLevels;
+    std::vector<ofVec2f> viewTargets;
+    std::unordered_map<Zoom, std::unordered_map<Theta, std::vector<TileKey>>> avaliableTiles;
+    std::unordered_map<Zoom, ofVec2f> zoomWorldSizes;
+    TileSet()
+    {
+        int fboW = ofGetWidth();
+        int fboH = ofGetHeight();
+        fboA.allocate(fboW, fboH, GL_RGBA);
+        fboB.allocate(fboW, fboH, GL_RGBA);
+        fboMain.allocate(fboW, fboH, GL_RGBA);
+
+        t1 = 0;
+        t2 = 1;
+    }
 };
 
 class ofApp : public ofBaseApp
@@ -50,9 +76,8 @@ public:
     std::string scanRoot;
     ofxCsv csv;
 
-    ofFbo fboA, fboB, fboFinal;
+    ofFbo fboFinal;
     ofShader blendShader;
-    float blendAlpha;
     ofPlanePrimitive plane;
 
     ofxFFmpegRecorder ffmpegRecorder;
@@ -83,8 +108,7 @@ public:
     ofRectangle screenRectangle;
     ofVec2f screenCenter;
 
-    std::string nextTileSet;
-    ofVec2f nextTileSetOffset;
+    TileSet *currentTileSet, *nextTileSet;
 
     const float maxZoom = 1.f;
     const float minZoom = 8.f;
@@ -111,36 +135,28 @@ public:
 
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
-    std::unordered_map<std::string, std::vector<ofVec2f>> viewTargets;
+    std::unordered_map<std::string, TileSet> tilesets;
 
-    std::vector<int> thetaLevels = {0, 18, 36, 54, 72, 90, 108, 126, 144, 162};
-
-    // cache +- 1.5x view area at zoom level
-    // cache +- 1 zoom level of tiles
-    // cache +- 2 theta levels for current zoom level
     std::unordered_map<TileKey, ofTexture> cacheMain;
     TileCacheLRU cacheSecondary{600};
     int cacheMisses = 0;
 
-    std::unordered_map<std::string, std::unordered_map<int, std::vector<TileKey>>> avaliableTiles;
-    std::unordered_map<std::string, std::unordered_map<int, ofVec2f>> zoomWorldSizes;
     int numberVisibleTiles = 0;
 
     bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
     bool updateCaches();
     void loadTileList(const std::string &set);
-    void loadVisibleTiles(const View &view);
     void preloadZoom(int level);
-    void drawTiles();
+    void drawTiles(const TileSet &tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
     void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
 
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);
 
-    ofVec2f globalToWorld(const ofVec2f &coords) const;
-    ofVec2f worldToGlobal(const ofVec2f &coords) const;
+    ofVec2f globalToWorld(const ofVec2f &coords, const std::string &set) const;
+    ofVec2f worldToGlobal(const ofVec2f &coords, const std::string &set) const;
 
     void calculateViewMatrix();
 };

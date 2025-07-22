@@ -8,11 +8,6 @@ void ofApp::setup()
 
     // Setup shader stuff
     ofEnableAlphaBlending();
-    int fboW = ofGetWidth();
-    int fboH = ofGetHeight();
-    fboA.allocate(fboW, fboH, GL_RGBA);
-    fboB.allocate(fboW, fboH, GL_RGBA);
-    fboFinal.allocate(fboW, fboH, GL_RGB);
 
     if (!blendShader.load("blend"))
         ofLogError() << "Shader not loaded!";
@@ -62,9 +57,6 @@ void ofApp::setup()
         return;
     }
 
-    if (scanName2.has_value())
-        nextTileSet.assign(scanName2.value());
-
     scanRoot.assign(rootFolder.value());
 
     recordingFps = fps.value_or(30.f);
@@ -83,21 +75,24 @@ void ofApp::setup()
     screenCenter = screenRectangle.getBottomRight() / 2.f;
     calculateViewMatrix();
 
-    // loader.start();
-    currentView.tileset = scanName.value();
+    loadTileList(scanName.value());
+    currentTileSet = &tilesets[scanName.value()];
 
-    loadTileList(currentView.tileset);
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-    ofVec2f currentWoldSize = zoomWorldSizes[currentView.tileset][zoom];
-    nextTileSetOffset = ofVec2f(currentWoldSize.x, 0.f);
-    if (nextTileSet.length() > 0)
-        loadTileList(nextTileSet);
-    loadVisibleTiles(currentView);
+    if (scanName2.has_value())
+    {
+        int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+        ofVec2f currentWorldSize = tilesets.at(scanName.value()).zoomWorldSizes[zoom];
+        loadTileList(scanName2.value());
+        tilesets[scanName2.value()].offset = ofVec2f(currentWorldSize.x, 0.f);
+
+        nextTileSet = &tilesets[scanName2.value()];
+    }
+
     preloadZoom(currentZoomLevel - 1);
     preloadZoom(currentZoomLevel - 2);
     updateCaches();
 
-    ofVec2f centerWorld = globalToWorld({0.5f, 0.5f});
+    ofVec2f centerWorld = globalToWorld({0.5f, 0.5f}, scanName.value());
     ofLogNotice() << centerWorld;
     currentView.offsetWorld.set(centerWorld);
     calculateViewMatrix();
@@ -109,9 +104,6 @@ void ofApp::setup()
     std::ofstream pathfile;
     pathfile.open("path.csv");
     pathfile << "t,leftX,leftY,rightX,rightY" << std::endl;
-
-    ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps);
-    ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
 
     ofResetElapsedTimeCounter();
 
@@ -128,8 +120,6 @@ void ofApp::update()
         dt = frameReady ? (1.f / recordingFps) : 0.f;
     else
         dt = fpsCounter.getLastFrameSecs();
-
-    // t += dt;
 
     if (!recording || frameReady)
     {
@@ -177,7 +167,9 @@ void ofApp::update()
             viewTargetWorld *= multiplier;
             viewStartWorld *= multiplier;
             currentView.offsetWorld *= multiplier;
-            nextTileSetOffset *= multiplier;
+            for (auto &ts : tilesets)
+                ts.second.offset *= multiplier;
+
             lastZoomLevel = currentZoomLevel;
             calculateViewMatrix();
         }
@@ -207,23 +199,27 @@ void ofApp::update()
             currentTheta.setValue(currentTheta.getValue() - 180.f);
         }
 
-        currentView.thetaIndex = 0;
-        for (size_t i = 0; i < thetaLevels.size(); i++)
+        for (auto &[set, tileset] : tilesets)
         {
-            if (thetaLevels[i] > currentView.theta)
-                break;
-            currentView.thetaIndex = i;
+            int thetaIndex = 0;
+            for (size_t i = 0; i < tileset.thetaLevels.size(); i++)
+            {
+                if (tileset.thetaLevels[i] > currentView.theta)
+                    break;
+                thetaIndex = i;
+            }
+
+            // compute alpha blend
+            tileset.t1 = tileset.thetaLevels[thetaIndex];
+            tileset.t2 = tileset.thetaLevels[(thetaIndex + 1) % tileset.thetaLevels.size()];
+            int t2;
+            if (thetaIndex == static_cast<int>(tileset.thetaLevels.size()) - 1)
+                t2 = tileset.thetaLevels[0] + 180;
+            else
+                t2 = tileset.t2;
+
+            tileset.blendAlpha = ofMap(currentView.theta, (float)tileset.t1, (float)(t2), 0.f, 1.f);
         }
-
-        // compute alpha blend
-        int t1 = thetaLevels[currentView.thetaIndex];
-        int t2;
-        if (currentView.thetaIndex == static_cast<int>(thetaLevels.size()) - 1)
-            t2 = thetaLevels[0] + 180;
-        else
-            t2 = thetaLevels[currentView.thetaIndex + 1];
-
-        blendAlpha = ofMap(currentView.theta, (float)t1, (float)(t2), 0.f, 1.f);
     }
 
     currentView.viewWorld.set(
@@ -244,12 +240,7 @@ void ofApp::update()
             ofVec2f tween2 = viewTargetWorld * t2 + viewStartWorld * (1.f - t2);
 
             futureView.offsetWorld = screenToWorld(tween2);
-            loadVisibleTiles(futureView);
         }
-    }
-    else
-    {
-        loadVisibleTiles(currentView);
     }
 
     if (shouldLoadZoomOut && !recording)
@@ -269,21 +260,16 @@ void ofApp::draw()
     float elapsedTime = ofGetElapsedTimef();
     lastFrameTime = elapsedTime;
 
-    ofBackground(0, 0, 255);
-    drawTiles();
+    for (const auto &[set, tileset] : tilesets)
+        drawTiles(tileset);
 
     fboFinal.begin();
-    ofClear(0);
-    blendShader.begin();
-    blendShader.setUniformTexture("texA", fboA.getTexture(), 1);
-    blendShader.setUniformTexture("texB", fboB.getTexture(), 2);
-    blendShader.setUniform1f("alpha", blendAlpha);
-    plane.draw();
-    blendShader.end();
+    ofBackground(0, 0, 255);
+
+    for (const auto &[set, tileset] : tilesets)
+        tileset.fboMain.draw(0, 0);
 
     ofVec2f cursor(static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY()));
-    ofVec2f cursorWorld = screenToWorld(cursor);
-    ofVec2f cursorGlobal = worldToGlobal(cursorWorld);
     const float margin = 6.f;
     std::vector<ofVec2f> screenCorners = {
         {margin, margin},
@@ -298,38 +284,10 @@ void ofApp::draw()
         ofPushMatrix();
         ofMultMatrix(viewMatrix);
 
-        if (drawCached)
-        {
-            ofPushStyle();
-            ofSetColor(0, 0, 255);
-            ofNoFill();
-            for (auto &it : cacheSecondary)
-            {
-                TileKey key = it.first;
-                if (key.theta != thetaLevels[currentView.thetaIndex])
-                    continue;
-
-                float multiplier = key.zoom / std::powf(2, currentZoomLevel);
-                float x = multiplier * key.x;
-                float y = multiplier * key.y;
-                float w = multiplier * key.width;
-                float h = multiplier * key.height;
-
-                if (!isVisible(key))
-                    continue;
-
-                ofDrawRectangle(x + 2, y + 2, w - 4, h - 4);
-            }
-            ofPopStyle();
-        }
-
         ofPushStyle();
         ofSetLineWidth(10.f);
         ofNoFill();
         ofSetColor(0, 255, 255);
-        int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-        ofRectangle nextTileSetBounds(nextTileSetOffset, nextTileSetOffset + zoomWorldSizes[nextTileSet][zoom]);
-        ofDrawRectangle(nextTileSetBounds);
         ofPopStyle();
 
         ofPushStyle();
@@ -363,18 +321,20 @@ void ofApp::draw()
     // ofDrawBitmapStringHighlight(ofToString(frameCount) + ", " + ofToString(time), 0, ofGetHeight());
 
     fboFinal.end();
+    fboFinal.draw(0, 0);
 
     if (recording && frameReady)
     {
         // save fboFinal to video buffer
         fboFinal.readToPixels(framePixels);
+
         if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
             ffmpegRecorder.addSingleFrame(framePixels);
 
         if (time >= lastPathT + recordPathDt)
         {
-            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}));
-            ofVec2f rightGlobal = worldToGlobal(screenToWorld({ofGetWidth(), ofGetHeight() / 2.f}));
+            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet->name);
+            ofVec2f rightGlobal = worldToGlobal(screenToWorld({ofGetWidth(), ofGetHeight() / 2.f}), currentTileSet->name);
 
             std::ofstream outfile;
             outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
@@ -397,8 +357,6 @@ void ofApp::draw()
         time += 1.f / recordingFps;
     }
 
-    fboFinal.draw(0, 0);
-
     if (recording)
     {
         ofNoFill();
@@ -410,14 +368,14 @@ void ofApp::draw()
     if (showDebug)
     {
         std::string coordinates = std::format(
-            "Offset: {:.2f}, {:.2f}, Mouse: world {:.2f}, {:.2f} global {:.4f}, {:.4f}, ZoomCenter {:.2f}, {:.2f}, rotationAngle {:.2f}",
-            currentView.offsetWorld.x, currentView.offsetWorld.y, cursorWorld.x, cursorWorld.y, cursorGlobal.x, cursorGlobal.y, zoomCenterWorld.x, zoomCenterWorld.y, rotationAngle.getValue());
+            "Offset: {:.2f}, {:.2f}, ZoomCenter {:.2f}, {:.2f}, rotationAngle {:.2f}",
+            currentView.offsetWorld.x, currentView.offsetWorld.y, zoomCenterWorld.x, zoomCenterWorld.y, rotationAngle.getValue());
 
         ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
         std::string status = std::format(
-            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} (Theta Index: {:2}, blend: {:.2f})\nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, t {:.2f}",
-            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, currentView.thetaIndex, blendAlpha, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, time);
+            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, t {:.2f}",
+            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, time);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
@@ -476,11 +434,14 @@ void ofApp::keyPressed(int key)
         cycleTheta = !cycleTheta;
     else if (key == ' ')
     {
+        if (currentTileSet == nullptr)
+            return;
+
         try
         {
-            ofVec2f t(viewTargets[currentView.tileset].back());
-            viewTargets[currentView.tileset].pop_back();
-            setViewTarget(globalToWorld(t));
+            ofVec2f t(currentTileSet->viewTargets.back());
+            currentTileSet->viewTargets.pop_back();
+            setViewTarget(globalToWorld(t, currentTileSet->name));
         }
         catch (const std::exception &e)
         {
@@ -500,7 +461,8 @@ void ofApp::keyPressed(int key)
 
             ofLogNotice() << "Recording to " << recordingFolder.value() + recordingFileName.value();
 
-            ffmpegRecorder.setup(true, false, {fboFinal.getWidth(), fboFinal.getHeight()}, recordingFps, 10000);
+            ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 10000);
+            ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
             ffmpegRecorder.setOutputPath(recordingFolder.value() + recordingFileName.value() + ".mp4");
             ffmpegRecorder.setVideoCodec("libx264");
             ffmpegRecorder.addAdditionalInputArgument("-hide_banner");
@@ -548,7 +510,6 @@ void ofApp::mousePressed(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseReleased(int x, int y, int button)
 {
-    loadVisibleTiles(currentView);
 }
 
 //--------------------------------------------------------------
@@ -567,16 +528,21 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 //--------------------------------------------------------------
 void ofApp::windowResized(int w, int h)
 {
-    fboA.allocate(w, h, GL_RGBA);
-    fboB.allocate(w, h, GL_RGBA);
-    fboFinal.allocate(w, h, GL_RGB);
+    plane.set(ofGetWidth(), ofGetHeight());
+    plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
+
+    for (auto &[set, tileset] : tilesets)
+    {
+        tileset.fboA.allocate(w, h, GL_RGBA);
+        tileset.fboB.allocate(w, h, GL_RGBA);
+        tileset.fboMain.allocate(w, h, GL_RGBA);
+        plane.mapTexCoordsFromTexture(tileset.fboMain.getTexture());
+    }
 
     screenRectangle = ofRectangle(0.f, 0.f, static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight()));
     screenCenter = screenRectangle.getBottomRight() / 2.f;
 
-    plane.set(ofGetWidth(), ofGetHeight());
-    plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
-    plane.mapTexCoordsFromTexture(fboFinal.getTexture());
+    fboFinal.allocate(w, h, GL_RGB);
 
     updateCaches();
 }
@@ -626,16 +592,18 @@ bool ofApp::updateCaches()
 
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
 
-    int t1 = thetaLevels[currentView.thetaIndex];
-    int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
-
     // 1. Demote from MAIN
     for (auto it = cacheMain.begin(); it != cacheMain.end();)
     {
         TileKey key = it->first;
 
+        Theta t1 = tilesets[key.tileset].t1;
+        Theta t2 = tilesets[key.tileset].t2;
+
         if (
-            (key.zoom != zoom) || (key.theta != t1 && key.theta != t2) || (key.tileset != currentView.tileset && key.tileset != nextTileSet) || (key.tileset == currentView.tileset && !isVisible(key)) || (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset)))
+            (key.zoom != zoom) ||
+            (key.theta != t1 && key.theta != t2) ||
+            (!isVisible(key, tilesets[key.tileset].offset)))
         {
             cacheSecondary.put(key, it->second);
             it = cacheMain.erase(it);
@@ -645,95 +613,39 @@ bool ofApp::updateCaches()
     }
 
     // 2. Check which tiles are needed
-    for (const TileKey &key : avaliableTiles[currentView.tileset][zoom])
+    for (const auto &[set, tileset] : tilesets)
     {
-        if (cacheMain.count(key))
-            continue;
+        const auto &v1 = tileset.avaliableTiles.at(zoom).at(tileset.t1);
+        const auto &v2 = tileset.avaliableTiles.at(zoom).at(tileset.t2);
 
-        if (
-            (key.theta != t1 && key.theta != t2) || (key.tileset != currentView.tileset && key.tileset != nextTileSet) || (key.tileset == currentView.tileset && !isVisible(key))
-            // (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset))
-        )
-            continue;
+        for (const auto &vec : {std::cref(v1), std::cref(v2)})
+        {
+            for (const TileKey &key : vec.get())
+            {
+                if (cacheMain.count(key))
+                    continue;
 
-        ofTexture tile;
-        if (cacheSecondary.get(key, tile))
-        {
-            cacheMain[key] = tile;
-            cacheSecondary.erase(key);
-        }
-        else
-        {
-            frameReady = false;
-            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { cacheMisses++;
+                if (!isVisible(key, tileset.offset))
+                    continue;
+
+                ofTexture tile;
+                if (cacheSecondary.get(key, tile))
+                {
+                    cacheMain[key] = tile;
+                    cacheSecondary.erase(key);
+                }
+                else
+                {
+                    frameReady = false;
+                    loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                                       { cacheMisses++;
                                  cacheMain[key] = tile.getTexture(); });
-        }
-    }
-
-    for (const TileKey &key : avaliableTiles[nextTileSet][zoom])
-    {
-        if (cacheMain.count(key))
-            continue;
-
-        if (
-            (key.theta != t1 && key.theta != t2) || (key.tileset != currentView.tileset && key.tileset != nextTileSet) ||
-            // (key.tileset == currentView.tileset && !isVisible(key))
-            (key.tileset == nextTileSet && !isVisible(key, nextTileSetOffset)))
-            continue;
-
-        ofTexture tile;
-        if (cacheSecondary.get(key, tile))
-        {
-            cacheMain[key] = tile;
-            cacheSecondary.erase(key);
-        }
-        else
-        {
-            frameReady = false;
-            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { cacheMisses++;
-                                 cacheMain[key] = tile.getTexture(); });
+                }
+            }
         }
     }
 
     return frameReady;
-}
-
-void ofApp::loadVisibleTiles(const View &view)
-{
-    return;
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-
-    // preload thetas CW and CCW from current
-    int theta = thetaLevels[view.thetaIndex];
-    int tCW1 = thetaLevels[(view.thetaIndex + 1) % thetaLevels.size()];
-    int tCW2 = thetaLevels[(view.thetaIndex + 2) % thetaLevels.size()];
-    int tCCW1 = thetaLevels[(view.thetaIndex + thetaLevels.size() - 1) % thetaLevels.size()];
-
-    // add an additional margin to preload tiles offscreen
-    ofRectangle margin(view.viewWorld);
-    margin.scaleFromCenter(1.3f);
-    float right = margin.getRight();
-    float left = margin.getLeft();
-    float top = margin.getTop();
-    float bottom = margin.getBottom();
-
-    for (const TileKey &key : avaliableTiles[view.tileset][zoom])
-    {
-        if (key.x >= right || key.x + key.width <= left || key.y >= bottom || key.y + key.height <= top)
-            continue;
-
-        if (key.theta != theta && key.theta != tCW1 && key.theta != tCW2 && key.theta != tCCW1)
-            continue;
-
-        if (cacheMain.count(key))
-            continue;
-
-        if (!cacheSecondary.contains(key, true))
-            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { cacheSecondary.put(key, tile.getTexture()); });
-    }
 }
 
 void ofApp::preloadZoom(int level)
@@ -742,36 +654,45 @@ void ofApp::preloadZoom(int level)
         return;
 
     float multiplier = std::powf(2.f, (level - currentZoomLevel));
-
-    int t1 = thetaLevels[currentView.thetaIndex];
-    int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
+    Zoom zoom = static_cast<int>(std::floor(std::powf(2, level)));
 
     float right = currentView.viewWorld.getRight() / multiplier;
     float left = currentView.viewWorld.getLeft() / multiplier;
     float top = currentView.viewWorld.getTop() / multiplier;
     float bottom = currentView.viewWorld.getBottom() / multiplier;
 
-    int preloadCount = 0;
-    int zoom = static_cast<int>(std::floor(std::powf(2, level)));
-
-    for (const TileKey &key : avaliableTiles[currentView.tileset][zoom])
+    for (auto &[set, tileset] : tilesets)
     {
-        if (key.theta != t1 && key.theta != t2)
-            continue;
+        // check if tileset in frame first
+        // ofVec2f tilesetBounds = tileset.zoomWorldSizes[zoom];
 
-        if (key.x >= right || (key.x + key.width) <= left || key.y >= bottom || (key.y + key.height) <= top)
-            continue;
+        int preloadCount = 0;
 
-        if (!cacheSecondary.contains(key, false))
+        const auto &v1 = tileset.avaliableTiles.at(zoom).at(tileset.t1);
+        const auto &v2 = tileset.avaliableTiles.at(zoom).at(tileset.t2);
+
+        for (const auto &vec : {std::cref(v1), std::cref(v2)})
         {
-            loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
-                               { cacheSecondary.put(key, tile.getTexture()); });
-            preloadCount++;
+            for (const TileKey &key : vec.get())
+            {
+                if (key.x + tileset.offset.x >= right ||
+                    (key.x + key.width + tileset.offset.x) <= left ||
+                    key.y + tileset.offset.y >= bottom ||
+                    (key.y + key.height + tileset.offset.y) <= top)
+                    continue;
+
+                if (!cacheSecondary.contains(key, false))
+                {
+                    loader.requestLoad(key.filepath, [this, key](const std::string &, ofImage tile)
+                                       { cacheSecondary.put(key, tile.getTexture()); });
+                    preloadCount++;
+                }
+            }
         }
     }
 }
 
-void ofApp::drawTiles()
+void ofApp::drawTiles(const TileSet &tileset)
 {
     numberVisibleTiles = 0;
 
@@ -779,67 +700,57 @@ void ofApp::drawTiles()
     ofSetColor(255);
     ofSetLineWidth(1.f);
 
-    fboA.begin();
-    ofBackground(0);
-    fboA.end();
+    tileset.fboA.begin();
+    ofClear(0.0f, 0.0f);
+    tileset.fboA.end();
 
-    fboB.begin();
-    ofBackground(0);
-    fboB.end();
+    tileset.fboB.begin();
+    ofClear(0.0f, 0.0f);
+    tileset.fboB.end();
 
-    int t1 = thetaLevels[currentView.thetaIndex];
-    int t2 = thetaLevels[(currentView.thetaIndex + 1) % thetaLevels.size()];
-
-    for (auto it = cacheMain.begin(); it != cacheMain.end(); ++it)
+    for (const auto &[key, tile] : cacheMain)
     {
-        const TileKey &key = it->first;
-        const ofTexture &tile = it->second;
+        if (tileset.name != key.tileset)
+            continue;
 
         // draw thetas on different fbos
-        if (key.theta == t1)
-        {
-            fboA.begin();
-            ofPushMatrix();
-            ofMultMatrix(viewMatrix);
-            ofSetColor(255);
-            if (key.tileset == currentView.tileset)
-                tile.draw(key.x, key.y);
-            else
-                tile.draw(key.x + nextTileSetOffset.x, key.y + nextTileSetOffset.y);
-
-            if (showDebug && !recording)
-            {
-                ofSetColor(255, 0, 0);
-                ofSetLineWidth(3.f);
-                ofDrawRectangle(key.x, key.y, key.width, key.height);
-            }
-            ofPopMatrix();
-            fboA.end();
-        }
-        else if (key.theta == t2)
-        {
-            fboB.begin();
-            ofPushMatrix();
-            ofMultMatrix(viewMatrix);
-            ofSetColor(255);
-            if (key.tileset == currentView.tileset)
-                tile.draw(key.x, key.y);
-            else
-                tile.draw(key.x + nextTileSetOffset.x, key.y + nextTileSetOffset.y);
-            if (showDebug && !recording)
-            {
-                ofSetColor(0, 255, 0);
-                ofSetLineWidth(3.f);
-                ofDrawRectangle(key.x, key.y, key.width, key.height);
-            }
-            ofPopMatrix();
-            fboB.end();
-        }
+        if (key.theta == tileset.t1)
+            tileset.fboA.begin();
+        else if (key.theta == tileset.t2)
+            tileset.fboB.begin();
         else
             continue;
 
+        ofPushMatrix();
+        ofMultMatrix(viewMatrix);
+        ofSetColor(255);
+        tile.draw(key.x + tileset.offset.x, key.y + tileset.offset.y);
+
+        if (showDebug && !recording)
+        {
+            ofSetColor(255, 0, 0);
+            ofSetLineWidth(3.f);
+            ofDrawRectangle(key.x, key.y, key.width, key.height);
+        }
+        ofPopMatrix();
+
+        if (key.theta == tileset.t1)
+            tileset.fboA.end();
+        else
+            tileset.fboB.end();
+
         numberVisibleTiles++;
     }
+
+    tileset.fboMain.begin();
+    ofClear(0.f, 0.f);
+    blendShader.begin();
+    blendShader.setUniformTexture("texA", tileset.fboA.getTexture(), 1);
+    blendShader.setUniformTexture("texB", tileset.fboB.getTexture(), 2);
+    blendShader.setUniform1f("alpha", tileset.blendAlpha);
+    plane.draw();
+    blendShader.end();
+    tileset.fboMain.end();
 }
 
 void ofApp::calculateViewMatrix()
@@ -873,23 +784,27 @@ void ofApp::loadTileList(const std::string &set)
         return;
     }
 
+    TileSet tileset;
+    tileset.name = set;
+
     // get list of theta levels (as ints)
-    auto rotations = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
-    auto rotationDirs = rotations.getFiles();
-    thetaLevels.clear();
-    for (const ofFile &thetaDir : rotationDirs)
+    auto thetas = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
+    auto thetasDirs = thetas.getFiles();
+    tileset.thetaLevels.clear();
+
+    for (const ofFile &thetaDir : thetasDirs)
     {
         if (!thetaDir.isDirectory())
             continue;
 
         int theta = ofToInt(thetaDir.getFileName());
-        thetaLevels.push_back(theta);
+        tileset.thetaLevels.push_back(theta);
     }
 
-    std::sort(thetaLevels.begin(), thetaLevels.end());
+    std::sort(tileset.thetaLevels.begin(), tileset.thetaLevels.end());
     ofLogNotice() << "- Theta levels:";
     std::string levels = "";
-    for (const int t : thetaLevels)
+    for (const Theta t : tileset.thetaLevels)
         levels += " " + ofToString(t);
 
     ofLogNotice() << levels;
@@ -900,7 +815,7 @@ void ofApp::loadTileList(const std::string &set)
         if (!zoomDir.isDirectory())
             continue;
 
-        int zoom = ofToInt(zoomDir.getFileName());
+        Zoom zoom = ofToInt(zoomDir.getFileName());
 
         ofLogNotice() << "- Zoom level " << zoom;
 
@@ -913,8 +828,11 @@ void ofApp::loadTileList(const std::string &set)
 
         ofVec2f zoomSize(0.f, 0.f);
 
-        std::vector<TileKey> tiles;
-        tiles.reserve(tileFiles.size());
+        for (const Theta t : tileset.thetaLevels)
+        {
+            tileset.avaliableTiles[zoom][t].reserve(tileFiles.size());
+        }
+
         for (size_t i = 0; i < tileFiles.size(); i++)
         {
             std::string filename = tileFiles[i].getFileName();
@@ -926,18 +844,17 @@ void ofApp::loadTileList(const std::string &set)
             int width = ofToInt(components[2]);
             int height = ofToInt(components[3]);
 
-            for (const int t : thetaLevels)
+            for (const Theta t : tileset.thetaLevels)
             {
                 std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
-                tiles.emplace_back(zoom, x, y, width, height, t, filepath, set);
+                tileset.avaliableTiles[zoom][t].emplace_back(zoom, x, y, width, height, t, filepath, set);
             }
 
             zoomSize.x = std::max(zoomSize.x, static_cast<float>(x + width));
             zoomSize.y = std::max(zoomSize.y, static_cast<float>(y + height));
         }
 
-        avaliableTiles[set][zoom] = tiles;
-        zoomWorldSizes[set][zoom] = zoomSize;
+        tileset.zoomWorldSizes[zoom] = zoomSize;
     }
 
     // load POI list
@@ -956,15 +873,22 @@ void ofApp::loadTileList(const std::string &set)
             float x = row.getFloat(1);
             float y = row.getFloat(2);
 
-            viewTargets[set].emplace_back(x, y);
+            tileset.viewTargets.emplace_back(x, y);
         }
     }
     else
         ofLogNotice() << "poi.csv not found.";
+
+    tileset.t1 = tileset.thetaLevels[0];
+    tileset.t2 = tileset.thetaLevels[1];
+    tilesets[set] = tileset;
 }
 
 void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
 {
+    if (currentTileSet == nullptr)
+        return;
+
     viewTargetAnim.pause();
     viewTargetAnim.reset(0.f);
 
@@ -973,7 +897,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewStartWorld.set(currentView.offsetWorld);
 
     // set duration based on distance to target
-    float dist = worldToGlobal(viewStartWorld).distance(worldToGlobal(viewTargetWorld));
+    float dist = worldToGlobal(viewStartWorld, currentTileSet->name).distance(worldToGlobal(viewTargetWorld, currentTileSet->name));
     // normalise where corner-to-corner is 1.0
     dist /= sqrtf(2);
     ofLogNotice() << "Normalised distance to target: " << dist;
@@ -1007,13 +931,13 @@ ofVec2f ofApp::worldToScreen(const ofVec2f &coords)
     return worldCoords * viewMatrix;
 }
 
-ofVec2f ofApp::globalToWorld(const ofVec2f &coords) const
+ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const std::string &set) const
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
     try
     {
-        zoomSize.set(zoomWorldSizes.at(currentView.tileset).at(zoom));
+        zoomSize.set(tilesets.at(set).zoomWorldSizes.at(zoom));
     }
     catch (const std::exception &e)
     {
@@ -1023,13 +947,13 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords) const
     return coords * zoomSize;
 }
 
-ofVec2f ofApp::worldToGlobal(const ofVec2f &coords) const
+ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const std::string &set) const
 {
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
     try
     {
-        zoomSize.set(zoomWorldSizes.at(currentView.tileset).at(zoom));
+        zoomSize.set(tilesets.at(set).zoomWorldSizes.at(zoom));
     }
     catch (const std::exception &e)
     {

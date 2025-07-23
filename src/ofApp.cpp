@@ -92,7 +92,7 @@ void ofApp::setup()
     preloadZoom(currentZoomLevel - 2);
     updateCaches();
 
-    ofVec2f centerWorld = globalToWorld({0.5f, 0.5f}, scanName.value());
+    ofVec2f centerWorld = globalToWorld({0.5f, 0.5f}, currentTileSet);
     ofLogNotice() << centerWorld;
     currentView.offsetWorld.set(centerWorld);
     calculateViewMatrix();
@@ -264,7 +264,7 @@ void ofApp::draw()
         drawTiles(tileset);
 
     fboFinal.begin();
-    ofBackground(0, 0, 255);
+    ofBackground(0, 0, 0);
 
     for (const auto &[set, tileset] : tilesets)
         tileset.fboMain.draw(0, 0);
@@ -333,8 +333,8 @@ void ofApp::draw()
 
         if (time >= lastPathT + recordPathDt)
         {
-            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet->name);
-            ofVec2f rightGlobal = worldToGlobal(screenToWorld({ofGetWidth(), ofGetHeight() / 2.f}), currentTileSet->name);
+            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet);
+            ofVec2f rightGlobal = worldToGlobal(screenToWorld({ofGetWidth(), ofGetHeight() / 2.f}), currentTileSet);
 
             std::ofstream outfile;
             outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
@@ -432,6 +432,23 @@ void ofApp::keyPressed(int key)
         drawCached = !drawCached;
     else if (key == 't')
         cycleTheta = !cycleTheta;
+    else if (key == 'n')
+    {
+        if (nextTileSet == nullptr)
+            return;
+
+        currentTileSet = nextTileSet;
+        try
+        {
+            ofVec2f t(currentTileSet->viewTargets.back());
+            currentTileSet->viewTargets.pop_back();
+            setViewTarget(globalToWorld(t, currentTileSet));
+        }
+        catch (const std::exception &e)
+        {
+            return;
+        }
+    }
     else if (key == ' ')
     {
         if (currentTileSet == nullptr)
@@ -441,7 +458,7 @@ void ofApp::keyPressed(int key)
         {
             ofVec2f t(currentTileSet->viewTargets.back());
             currentTileSet->viewTargets.pop_back();
-            setViewTarget(globalToWorld(t, currentTileSet->name));
+            setViewTarget(globalToWorld(t, currentTileSet));
         }
         catch (const std::exception &e)
         {
@@ -750,6 +767,18 @@ void ofApp::drawTiles(const TileSet &tileset)
     blendShader.setUniform1f("alpha", tileset.blendAlpha);
     plane.draw();
     blendShader.end();
+
+    if (showDebug)
+    {
+        // Draw poi
+
+        ofSetColor(255, 255, 0);
+        for (auto &vt : tileset.viewTargets)
+        {
+            ofVec2f poi = worldToScreen(globalToWorld(vt, &tileset));
+            ofDrawTriangle(poi, poi + ofVec2f(8, 10), poi + ofVec2f(-8, 10));
+        }
+    }
     tileset.fboMain.end();
 }
 
@@ -897,7 +926,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewStartWorld.set(currentView.offsetWorld);
 
     // set duration based on distance to target
-    float dist = worldToGlobal(viewStartWorld, currentTileSet->name).distance(worldToGlobal(viewTargetWorld, currentTileSet->name));
+    float dist = worldToGlobal(viewStartWorld, currentTileSet).distance(worldToGlobal(viewTargetWorld, currentTileSet));
     // normalise where corner-to-corner is 1.0
     dist /= sqrtf(2);
     ofLogNotice() << "Normalised distance to target: " << dist;
@@ -931,29 +960,50 @@ ofVec2f ofApp::worldToScreen(const ofVec2f &coords)
     return worldCoords * viewMatrix;
 }
 
-ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const std::string &set) const
+ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const TileSet *tileset) const
 {
+    /*
+        Converts normalised relative coordinates in [0, 1]^2 in tileset to world
+        coordinates.
+    */
+    if (tileset == nullptr)
+    {
+        ofLogWarning() << "ofApp::worldToGlobal tileset in null";
+        return coords;
+    }
+
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
     try
     {
-        zoomSize.set(tilesets.at(set).zoomWorldSizes.at(zoom));
+        zoomSize.set(tileset->zoomWorldSizes.at(zoom));
     }
     catch (const std::exception &e)
     {
         // ofLogError("globalToWorld") << e.what() << " (zoom: " << zoom << ", tileset: " << ")";
         return coords;
     }
-    return coords * zoomSize;
+
+    return coords * zoomSize + tileset->offset;
 }
 
-ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const std::string &set) const
+ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const TileSet *tileset) const
 {
+    /*
+        Converts current coordinates to normalised coordinates in [0, 1]^2
+        relative to `tileset`.
+    */
+    if (tileset == nullptr)
+    {
+        ofLogWarning() << "ofApp::worldToGlobal tileset in null";
+        return coords;
+    }
+
     int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
     try
     {
-        zoomSize.set(tilesets.at(set).zoomWorldSizes.at(zoom));
+        zoomSize.set(tileset->zoomWorldSizes.at(zoom));
     }
     catch (const std::exception &e)
     {
@@ -961,5 +1011,5 @@ ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const std::string &set) cons
         return coords;
     }
 
-    return coords / zoomSize;
+    return (coords - tileset->offset) / zoomSize;
 }

@@ -155,8 +155,8 @@ public:
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);
 
-    ofVec2f globalToWorld(const ofVec2f &coords, const std::string &set) const;
-    ofVec2f worldToGlobal(const ofVec2f &coords, const std::string &set) const;
+    ofVec2f globalToWorld(const ofVec2f &coords, const TileSet *tileset) const;
+    ofVec2f worldToGlobal(const ofVec2f &coords, const TileSet *tileset) const;
 
     void calculateViewMatrix();
 };

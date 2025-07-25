@@ -108,7 +108,7 @@ public:
     ofRectangle screenRectangle;
     ofVec2f screenCenter;
 
-    TileSet *currentTileSet, *nextTileSet;
+    TileSet *currentTileSet;
 
     const float maxZoom = 1.f;
     const float minZoom = 8.f;
@@ -136,6 +136,8 @@ public:
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
     std::unordered_map<std::string, TileSet> tilesets;
+    std::vector<TileSet *> tilesetList;
+    size_t tileset_index = 0;
 
     std::unordered_map<TileKey, ofTexture> cacheMain;
     TileCacheLRU cacheSecondary{600};

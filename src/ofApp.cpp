@@ -29,8 +29,73 @@ void ofApp::setup()
     }
 
     std::optional<std::string> rootFolder = tbl["scans_root"].value<std::string>();
-    std::optional<std::string> scanName = tbl["scan_name"].value<std::string>();
-    std::optional<std::string> scanName2 = tbl["secondary_name"].value<std::string>();
+    if (!rootFolder.has_value())
+    {
+        ofLogError() << "config `scans_root` is empty!";
+        return;
+    }
+    scanRoot.assign(rootFolder.value());
+
+    auto scans = tbl["scans"];
+    ofLogNotice() << scans;
+    ofLogNotice() << scans.type();
+    if (!scans)
+    {
+        ofLogError() << "no 'scans' in config.toml";
+        return;
+    }
+
+    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    toml::array *arr = scans.as_array();
+    int count = 0;
+    arr->for_each([&](auto &&el)
+                  { ofLog() << el;
+                    ofLog() << el.at_path("name");
+                    ofLog() << el.at_path("position"); 
+                    ofLog() << count; 
+
+                    auto table = el.as_table();
+                    std::string name = table->at("name").as_string()->get();
+
+                    loadTileList(name);
+
+                    tilesetList.push_back(&tilesets[name]);
+
+                    if(count > 0) {
+                        // position the tileset
+                        std::string position = table->at("position").as_string()->get();
+                        
+                        TileSet *prevTileset= tilesetList[count - 1];
+                        if(table->contains("of")) {
+                            std::string ofName = table->at("of").as_string()->get();
+                            if (tilesets.contains(ofName))
+                                prevTileset = &tilesets.at(ofName);
+                            
+                        }
+
+                        ofVec2f prevSize = prevTileset->zoomWorldSizes[zoom];
+                        ofVec2f prevOffset = prevTileset->offset;
+
+                        TileSet *thisTileset = &tilesets[name];
+                        ofVec2f thisSize = thisTileset->zoomWorldSizes[zoom];
+
+                        if(position == "right") {
+                            thisTileset->offset.x = prevOffset.x + prevSize.x;
+                            thisTileset->offset.y = prevOffset.y;
+                        } else if (position == "below") {
+                            thisTileset->offset.x = prevOffset.x;
+                            thisTileset->offset.y = prevOffset.y + prevSize.y;
+                        } else if (position == "left") {
+                            thisTileset->offset.x = prevOffset.x - thisSize.x;
+                            thisTileset->offset.y = prevOffset.y;
+                        } else {
+                            thisTileset->offset.x = prevOffset.x;
+                            thisTileset->offset.y = prevOffset.y - thisSize.y;
+                        }
+                    }
+
+                    count++; });
+
     recordingFolder = tbl["recording_folder"].value<std::string>();
     recordingFileName = tbl["recording_filename"].value<std::string>();
     std::optional<float> fps = tbl["recording_fps"].value<float>();
@@ -39,25 +104,9 @@ void ofApp::setup()
 
     ofLogNotice() << "Loading config.toml:";
     ofLogNotice() << " - scans_root: " << rootFolder.value_or("<empty>");
-    ofLogNotice() << " - scan_name: " << scanName.value_or("<empty>");
-    ofLogNotice() << " - secondary_name: " << scanName2.value_or("<empty>");
     ofLogNotice() << " - recording_folder: " << recordingFolder.value_or("<empty>");
     ofLogNotice() << " - recording_filename: " << recordingFileName.value_or("<empty>");
     ofLogNotice() << " - recording_fps: " << fps.value();
-
-    if (!rootFolder.has_value())
-    {
-        ofLogError() << "config `scans_root` is empty!";
-        return;
-    }
-
-    if (!scanName.has_value())
-    {
-        ofLogError() << "config `scan_name` is empty!";
-        return;
-    }
-
-    scanRoot.assign(rootFolder.value());
 
     recordingFps = fps.value_or(30.f);
     minMovingTime = minMove.value_or(8.f);
@@ -68,25 +117,16 @@ void ofApp::setup()
     plane.setPosition(0, ofGetHeight(), 0);
     plane.mapTexCoords(0, 0, ofGetWidth(), ofGetHeight());
 
+    currentTileSet = tilesetList[0];
+
+    currentView.offsetWorld = worldToGlobal({0.5f, 0.5f}, currentTileSet);
+
     zoomCenterWorld = {0.f, 0.f};
     currentZoomLevel = std::floor(currentZoom.getValue());
     currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
     screenRectangle = ofRectangle(0.f, 0.f, static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight()));
     screenCenter = screenRectangle.getBottomRight() / 2.f;
     calculateViewMatrix();
-
-    loadTileList(scanName.value());
-    currentTileSet = &tilesets[scanName.value()];
-
-    if (scanName2.has_value())
-    {
-        int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-        ofVec2f currentWorldSize = tilesets.at(scanName.value()).zoomWorldSizes[zoom];
-        loadTileList(scanName2.value());
-        tilesets[scanName2.value()].offset = ofVec2f(currentWorldSize.x, 0.f);
-
-        nextTileSet = &tilesets[scanName2.value()];
-    }
 
     preloadZoom(currentZoomLevel - 1);
     preloadZoom(currentZoomLevel - 2);
@@ -438,10 +478,11 @@ void ofApp::keyPressed(int key)
         cycleTheta = !cycleTheta;
     else if (key == 'n')
     {
-        if (nextTileSet == nullptr)
-            return;
+        // if (nextTileSet == nullptr)
+        //     return;
 
-        currentTileSet = nextTileSet;
+        // currentTileSet = nextTileSet;
+        tileset_index++;
         try
         {
             ofVec2f t(currentTileSet->viewTargets.back());
@@ -751,7 +792,7 @@ void ofApp::drawTiles(const TileSet &tileset)
         {
             ofSetColor(255, 0, 0);
             ofSetLineWidth(3.f);
-            ofDrawRectangle(key.x, key.y, key.width, key.height);
+            ofDrawRectangle(key.x + tileset.offset.x, key.y + tileset.offset.y, key.width, key.height);
         }
         ofPopMatrix();
 

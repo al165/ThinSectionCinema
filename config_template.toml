@@ -1,6 +1,5 @@
 scans_root = "/absolute/path/to/scans/root/folder"  # REQUIRED must have a trailing '/'
-scan_name = "name_of_scan_folder"                   # REQUIRED
-secondary_name = ""                                 # OPTIONAL
+scans = []  # REQUIRED
 
 min_moving_time = 8.0
 max_moving_time = 45.0

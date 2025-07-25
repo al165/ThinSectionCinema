@@ -334,7 +334,7 @@ void ofApp::draw()
         if (time >= lastPathT + recordPathDt)
         {
             ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet);
-            ofVec2f rightGlobal = worldToGlobal(screenToWorld({ofGetWidth(), ofGetHeight() / 2.f}), currentTileSet);
+            ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), currentTileSet);
 
             std::ofstream outfile;
             outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
@@ -373,9 +373,13 @@ void ofApp::draw()
 
         ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
+        std::string tilesetName = "<null>";
+        if (currentTileSet != nullptr)
+            tilesetName = currentTileSet->name;
+
         std::string status = std::format(
-            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, t {:.2f}",
-            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, time);
+            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, t {:.2f}, Tileset: {}",
+            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, time, tilesetName);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 

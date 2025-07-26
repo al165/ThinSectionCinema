@@ -3,6 +3,7 @@ scans = []  # REQUIRED
 
 min_moving_time = 8.0
 max_moving_time = 45.0
+drill_speed = -0.1
 
 recording_folder = ""
 recording_filename = ""

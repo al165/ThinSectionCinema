@@ -101,6 +101,7 @@ void ofApp::setup()
     std::optional<float> fps = tbl["recording_fps"].value<float>();
     std::optional<float> minMove = tbl["min_moving_time"].value<float>();
     std::optional<float> maxMove = tbl["max_moving_time"].value<float>();
+    std::optional<float> drillSpeedConfig = tbl["drill_speed"].value<float>();
 
     ofLogNotice() << "Loading config.toml:";
     ofLogNotice() << " - scans_root: " << rootFolder.value_or("<empty>");
@@ -111,11 +112,17 @@ void ofApp::setup()
     recordingFps = fps.value_or(30.f);
     minMovingTime = minMove.value_or(8.f);
     maxMovingTime = maxMove.value_or(8.f);
+    drillSpeed = drillSpeedConfig.value_or(0.1f);
 
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setScale(1, -1, 1);
     plane.setPosition(0, ofGetHeight(), 0);
     plane.mapTexCoords(0, 0, ofGetWidth(), ofGetHeight());
+
+    rotationAngle.maxStep = 0.5f;
+    rotationAngle.warmUp = 0.f;
+    currentZoom.maxStep = 0.5f;
+    currentZoom.warmUp = 3.f;
 
     currentTileSet = tilesetList[0];
 
@@ -148,6 +155,7 @@ void ofApp::setup()
     ofResetElapsedTimeCounter();
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
+    ofAddListener(currentZoom.valueReached, this, &ofApp::valueReached);
 }
 
 //--------------------------------------------------------------
@@ -171,6 +179,13 @@ void ofApp::update()
             currentTheta.setTarget(nextTheta);
         }
         viewTargetAnim.update(dt);
+
+        if (drill)
+        {
+            // ofLog() << dt;
+            float nextAngle = rotationAngle.getTargetValue() - (drillSpeed * currentZoom.lastChange * 1000.f);
+            rotationAngle.setTarget(nextAngle);
+        }
     }
 
     calculateViewMatrix();
@@ -221,6 +236,18 @@ void ofApp::update()
     }
 
     rotationAngle.process(dt);
+
+    if (rotationAngle.getValue() < -180.f)
+    {
+        rotationAngle.setTarget(rotationAngle.getTargetValue() + 360.f);
+        rotationAngle.setValue(rotationAngle.getValue() + 360.f);
+    }
+    else if (rotationAngle.getValue() > 540.f)
+    {
+        rotationAngle.setTarget(rotationAngle.getTargetValue() - 360.f);
+        rotationAngle.setValue(rotationAngle.getValue() - 360.f);
+    }
+
     calculateViewMatrix();
 
     bool thetaUpdated = currentTheta.process(dt);
@@ -418,8 +445,8 @@ void ofApp::draw()
             tilesetName = currentTileSet->name;
 
         std::string status = std::format(
-            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, t {:.2f}, Tileset: {}",
-            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, time, tilesetName);
+            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {}",
+            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
@@ -499,15 +526,13 @@ void ofApp::keyPressed(int key)
         if (currentTileSet == nullptr)
             return;
 
-        try
+        drill = false;
+
+        if (currentTileSet->viewTargets.size())
         {
             ofVec2f t(currentTileSet->viewTargets.back());
             currentTileSet->viewTargets.pop_back();
             setViewTarget(globalToWorld(t, currentTileSet));
-        }
-        catch (const std::exception &e)
-        {
-            return;
         }
     }
     else if (key == 'r')
@@ -582,6 +607,7 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 
     zoomCenterWorld.set(screenToWorld({(float)x, (float)y}));
     currentZoom.speed = 2.f;
+    currentZoom.warmUp = 0.f;
     currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015f);
     focusViewTarget = false;
     viewTargetAnim.pause();
@@ -983,14 +1009,26 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewTargetAnim.setCurve(AnimCurve::EASE_IN_EASE_OUT);
     viewTargetAnim.animateToAfterDelay(1.f, delayS);
 
-    currentZoom.setTarget(2.f);
+    currentZoom.warmUp = 3.f;
+    currentZoom.setTarget(3.f);
     currentZoom.speed = .1f;
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 {
     if (ev.who == &viewTargetAnim)
-        currentZoom.setTarget(1.3f);
+    {
+        currentZoom.setTarget(1.3f, false);
+        drill = true;
+    }
+}
+
+void ofApp::valueReached(SmoothValueLinear::SmoothValueEvent &ev)
+{
+    if (ev.who == &currentZoom)
+    {
+        drill = false;
+    }
 }
 
 ofVec2f ofApp::screenToWorld(const ofVec2f &coords)

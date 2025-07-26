@@ -18,10 +18,13 @@ public:
     {
     }
 
-    void setTarget(float target)
+    void setTarget(float target, bool resetElapsed = true)
     {
         targetValue = std::clamp(target, minimum, maximum);
         needsProcessing = true;
+
+        if (resetElapsed)
+            elapsedTime = 0.f;
     }
 
     void setValue(float value)
@@ -58,22 +61,48 @@ public:
         {
             currentValue = targetValue;
             needsProcessing = false;
+            lastChange = 0.f;
+
+            SmoothValueEvent ev;
+            ev.value = currentValue;
+            ev.who = this;
+            ofNotifyEvent(valueReached, ev, this);
         }
         else
         {
             float step = speed * deltaS;
-            currentValue += diff * std::min(step, 1.f);
+            float warmUpT;
+            if (warmUp < 0.0001f)
+                warmUpT = 1.f;
+            else
+                warmUpT = std::min(elapsedTime, warmUp) / warmUp;
+            lastChange = diff * std::min(step, maxStep) * warmUpT;
+            currentValue += lastChange;
         }
         currentValue = std::clamp(currentValue, minimum, maximum);
+
+        elapsedTime += deltaS;
+
         return true;
     }
 
     float speed;
+    float maxStep = 1.f;
+    float warmUp = 0.1f;
+    float lastChange = 0.f;
+
+    struct SmoothValueEvent
+    {
+        float value;
+        SmoothValueLinear *who;
+    };
+    ofFastEvent<SmoothValueEvent> valueReached;
 
 private:
     float currentValue, targetValue;
     float minimum, maximum;
     bool needsProcessing;
+    float elapsedTime;
 };
 
 class SmoothVec2Linear

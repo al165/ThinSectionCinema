@@ -127,11 +127,12 @@ public:
 
     float minMovingTime, maxMovingTime;
     ofxAnimatableFloat viewTargetAnim;
-    ofxAnimatableFloat zoomAnim;
     ofVec2f viewTargetWorld = {0.f, 0.f};
     ofVec2f viewStartWorld = {0.f, 0.f};
     bool focusViewTarget = false;
     float time;
+    bool drill = false;
+    float drillSpeed = 0.1f;
 
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
@@ -153,6 +154,7 @@ public:
     void drawTiles(const TileSet &tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
     void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
+    void valueReached(SmoothValueLinear::SmoothValueEvent &ev);
 
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);

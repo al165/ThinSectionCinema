@@ -123,6 +123,7 @@ void ofApp::setup()
     rotationAngle.warmUp = 0.f;
     currentZoom.maxStep = 0.5f;
     currentZoom.warmUp = 3.f;
+    currentTheta.warmUp = 0.0f;
 
     currentTileSet = tilesetList[0];
 
@@ -518,6 +519,7 @@ void ofApp::keyPressed(int key)
         }
         catch (const std::exception &e)
         {
+            ofLogWarning() << "no next tileset";
             return;
         }
     }

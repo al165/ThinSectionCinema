@@ -513,6 +513,7 @@ void ofApp::keyPressed(int key)
         tileset_index++;
         try
         {
+            currentTileSet = tilesetList[tileset_index];
             ofVec2f t(currentTileSet->viewTargets.back());
             currentTileSet->viewTargets.pop_back();
             setViewTarget(globalToWorld(t, currentTileSet));
@@ -536,6 +537,17 @@ void ofApp::keyPressed(int key)
             currentTileSet->viewTargets.pop_back();
             setViewTarget(globalToWorld(t, currentTileSet));
         }
+    }
+    else if (key == 's')
+    {
+        // Skip
+        viewTargetAnim.pause();
+        currentView.offsetWorld = viewTargetWorld;
+
+        rotationAngle.skip();
+        currentZoom.skip();
+        currentTheta.skip();
+        drill = false;
     }
     else if (key == 'r')
     {
@@ -604,6 +616,8 @@ void ofApp::mouseReleased(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
+    drill = false;
+
     rotationCenterWorld.set(screenToWorld({(float)x, (float)y}));
     rotationAngle.setTarget(rotationAngle.getTargetValue() - scrollX);
 

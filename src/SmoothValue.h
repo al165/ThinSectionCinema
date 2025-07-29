@@ -40,6 +40,11 @@ public:
         needsProcessing = true;
     }
 
+    void skip()
+    {
+        jumpTo(targetValue);
+    }
+
     float getValue() const
     {
         return currentValue;

@@ -15,7 +15,9 @@ Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file 
 2. clone this repository into `openFrameworks/apps/myApps/`
 3. clone the following addons into `openFrameworks/addons/`
     - [ofxAnimatable](https://github.com/armadillu/ofxAnimatable)
-    - [ofxCsv](https://github.com/paulvollmer/ofxCsv.git)
+    - [ofxCsv](https://github.com/paulvollmer/ofxCsv)
+    - [ofxJson](https://github.com/jeffcrouse/ofxJSON)
+    - [ofxImGui](https://github.com/jvcleave/ofxImGui)
 4. in this repo run `make -j8` to build
 5. setup a tile scan folder of images and the `config.toml`
 6. `./bin/thinsections` to run.
@@ -43,7 +45,7 @@ The jpgs filenames should contain the position and size (in pixels) for that zoo
 
 The (optional) `poi.csv` file should have the following headings: `index, x, y, theta`.
 `x` and `y` are normalised floats in `[0, 1]`.
-`theta` is optional and unused for now.
+`theta` is optional and unused.
 
 ## Config
 

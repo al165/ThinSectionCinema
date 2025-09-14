@@ -10,11 +10,11 @@ public:
         float startValue = 0.f,
         float min = 0.f,
         float max = 1.f) : speed(s),
+                           epsilon(0.0001f),
                            currentValue(startValue),
                            targetValue(startValue),
                            minimum(min),
                            maximum(max),
-                           epsilon(0.0001f),
                            needsProcessing(true)
     {
     }

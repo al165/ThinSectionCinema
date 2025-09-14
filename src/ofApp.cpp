@@ -124,13 +124,12 @@ void ofApp::setup()
 void ofApp::drawGUI()
 {
     gui.begin();
-    // ImGui::SetNextWindowPos(ofVec2f(ofGetWindowPositionX(), ofGetWindowPositionY()), ImGuiCond_Once);
-    // ImGui::SetNextWindowSize(ofVec2f(ofGetWidth(), ofGetHeight()), ImGuiCond_Once);
-    // ImGui::ShowDemoWindow();
     ImGui::SetNextWindowPos(ImGui::GetWindowViewport()->Pos + ImVec2(ofGetWidth() - 400, 10), ImGuiCond_Once);
     ImGui::SetNextWindowSizeConstraints(ImVec2(320, 500), ImVec2(320, FLT_MAX));
-    // ImGui::SetNextWindowSize(ImVec2(320, ofGetHeight() * 0.5), ImGuiCond_Once);
-    ImGui::Begin("Scan manager", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Thin Section Cinema", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGuiIO &io = ImGui::GetIO();
+    disableInput = io.WantCaptureMouse;
 
     if (ImGui::TreeNode("Layout"))
     {
@@ -283,8 +282,41 @@ void ofApp::drawGUI()
         if (selectedTilesetName.size() > 0)
         {
             if (ImGui::Button("Add to sequence"))
-                sequence.emplace_back(selectedTilesetName, scan_poi_idx);
+            {
+                POI ev(selectedTilesetName, scan_poi_idx);
+                sequence.emplace_back(new POI(selectedTilesetName, scan_poi_idx));
+            }
         }
+
+        ImGui::TreePop();
+    }
+
+    if (ImGui::TreeNode("Parameters"))
+    {
+        ImGui::SliderFloat("drillSpeed", &drillSpeed, 0.f, 0.5f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##drill-speed"))
+            sequence.push_back(std::make_unique<ParameterChange>("drillSpeed", drillSpeed));
+
+        ImGui::SliderFloat("drillDepth", &drillDepth, 1.f, 3.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##drillDepth"))
+            sequence.push_back(std::make_unique<ParameterChange>("drillDepth", drillDepth));
+
+        ImGui::SliderFloat("spinSpeed", &spinSpeed, 0.f, 0.5f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##spin-speed"))
+            sequence.push_back(std::make_unique<ParameterChange>("spinSpeed", spinSpeed));
+
+        ImGui::SliderFloat("flyHeight", &flyHeight, 2.f, 5.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##flyHeight"))
+            sequence.push_back(std::make_unique<ParameterChange>("flyHeight", flyHeight));
+
+        ImGui::SliderFloat("thetaSpeed", &thetaSpeed, 0.f, 1.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##thetaSpeed"))
+            sequence.push_back(std::make_unique<ParameterChange>("thetaSpeed", thetaSpeed));
 
         ImGui::TreePop();
     }
@@ -297,23 +329,32 @@ void ofApp::drawGUI()
             ImGui::PushItemFlag(ImGuiItemFlags_AllowDuplicateId, true);
             for (size_t i = 0; i < sequence.size(); i++)
             {
-                POI poi = sequence[i];
-                std::string eventName = poi.tileset + "::" + ofToString(poi.poi);
+                SequenceEvent *ev = sequence[i].get();
                 const bool is_selected = (selected_event == i);
-                if (ImGui::Selectable(eventName.c_str(), is_selected))
+                if ((int)i < sequence_step)
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
+                else if ((int)i == sequence_step)
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+
+                if (ImGui::Selectable(ev->toString().c_str(), is_selected))
                 {
                     selected_event = i;
-                    jumpTo(poi);
-                    jumpZoom(1.5);
+                    if (auto *a = dynamic_cast<POI *>(ev))
+                    {
+                        jumpTo(*a);
+                        jumpZoom(1.5);
+                    }
                 }
+                if ((int)i <= sequence_step)
+                    ImGui::PopStyleColor();
 
                 if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
                 {
                     size_t n_next = i + (ImGui::GetMouseDragDelta(0).y < 0.f ? -1 : 1);
                     if (n_next >= 0 && n_next < sequence.size())
                     {
-                        sequence[i] = sequence[n_next];
-                        sequence[n_next] = poi;
+                        sequence[i].swap(sequence[n_next]);
+                        // sequence[n_next].;
                         ImGui::ResetMouseDragDelta();
                     }
                 }
@@ -325,6 +366,7 @@ void ofApp::drawGUI()
         if (ImGui::Button("Delete event"))
             sequence.erase(sequence.begin() + selected_event);
 
+        ImGui::Dummy({10, 10});
         ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
@@ -340,6 +382,18 @@ void ofApp::drawGUI()
             saveSequence("sequence.json");
         ImGui::PopStyleColor(3);
 
+        ImGui::Dummy({10, 10});
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
+        if (ImGui::Button("Play sequence"))
+            playSequence();
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Play from selection"))
+            playSequence(selected_event);
+
         ImGui::TreePop();
     }
 
@@ -352,45 +406,33 @@ void ofApp::update()
 {
     loader.dispatchMainCallbacks(32);
 
-    float dt;
-    if (recording)
-        dt = frameReady ? (1.f / recordingFps) : 0.f;
-    else
-        dt = fpsCounter.getLastFrameSecs();
+    frameReady = updateCaches();
 
-    if (!recording || frameReady)
+    if (!frameReady)
+        return;
+
+    float dt = frameReady ? (1.f / recordingFps) : 0.f;
+
+    currentView.offsetWorld += offsetDelta;
+    offsetDelta.set(0.f, 0.f);
+    if (cycleTheta)
+        currentTheta.setTarget(currentTheta.getTargetValue() + thetaSpeed);
+
+    viewTargetAnim.update(dt);
+
+    if (drill)
     {
-        currentView.offsetWorld += offsetDelta;
-        offsetDelta.set(0.f, 0.f);
-        if (cycleTheta)
-        {
-            float nextTheta = currentTheta.getTargetValue() + 0.1f;
-            currentTheta.setTarget(nextTheta);
-        }
-        viewTargetAnim.update(dt);
-
-        if (drill)
-        {
-            drillZoomAnim.update(dt);
-            float nextAngle = rotationAngle.getTargetValue() + (drillSpeed * drillZoomAnim.getCurrentSpeed());
-            rotationAngle.setTarget(nextAngle);
-        }
+        drillZoomAnim.update(dt);
+        float nextAngle = rotationAngle.getTargetValue() - (drillSpeed * drillZoomAnim.getCurrentSpeed());
+        rotationAngle.setTarget(nextAngle);
     }
 
     calculateViewMatrix();
 
-    float prevZoom = currentZoomSmooth.getValue();
-
     if (drill && drillZoomAnim.isAnimating() && !drillZoomAnim.getPaused())
-    {
         currentZoomSmooth.jumpTo(drillZoomAnim.getCurrentValue());
-    }
 
     bool zoomUpdated = currentZoomSmooth.process(dt);
-    bool zoomingIn = prevZoom > currentZoomSmooth.getValue();
-
-    bool shouldLoadZoomIn = false;
-    bool shouldLoadZoomOut = false;
 
     if (zoomUpdated)
     {
@@ -424,12 +466,14 @@ void ofApp::update()
             calculateViewMatrix();
         }
 
-        if (currentView.scale > 0.8 && zoomingIn)
-            shouldLoadZoomIn = true;
-        else if (currentView.scale < 0.6 && !zoomingIn)
-            shouldLoadZoomOut = true;
-
         currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    }
+
+    if (!drill)
+    {
+        spinSmooth.update(dt);
+        spinSmooth.getCurrentValue(); // Needed for getCurrentSpeed to work...
+        rotationAngle.setTarget(rotationAngle.getTargetValue() + spinSmooth.getCurrentSpeed() * spinSpeed);
     }
 
     rotationAngle.process(dt);
@@ -506,14 +550,6 @@ void ofApp::update()
             futureView.offsetWorld = screenToWorld(tween2);
         }
     }
-
-    if (shouldLoadZoomOut && !recording)
-        preloadZoom(currentZoomLevel + 1);
-
-    if (shouldLoadZoomIn && !recording)
-        preloadZoom(currentZoomLevel - 1);
-
-    frameReady = updateCaches();
 
     fpsCounter.update();
 }
@@ -661,7 +697,8 @@ void ofApp::draw()
 
     fpsCounter.newFrame();
 
-    drawGUI();
+    if (!hideGui)
+        drawGUI();
 }
 
 //--------------------------------------------------------------
@@ -785,6 +822,11 @@ void ofApp::keyPressed(int key)
         }
         recording = !recording;
     }
+    else if (key == 'g')
+    {
+        hideGui = !hideGui;
+        disableInput = false;
+    }
 }
 
 //--------------------------------------------------------------
@@ -795,6 +837,8 @@ void ofApp::mouseMoved(int x, int y)
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button)
 {
+    if (disableInput)
+        return;
     ofVec2f currentMouse(x, y);
 
     ofVec2f worldBeforePan = screenToWorld(lastMouse);
@@ -811,17 +855,25 @@ void ofApp::mouseDragged(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
+    if (disableInput)
+        return;
+
     lastMouse.set(x, y);
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseReleased(int x, int y, int button)
 {
+    if (disableInput)
+        return;
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
+    if (disableInput)
+        return;
+
     drill = false;
 
     rotationCenterWorld.set(screenToWorld({(float)x, (float)y}));
@@ -1282,20 +1334,29 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     float dist = worldToGlobal(viewStartWorld, currentTileSet).distance(worldToGlobal(viewTargetWorld, currentTileSet));
     // normalise where corner-to-corner is 1.0
     dist /= sqrtf(2);
-    ofLogNotice() << "Normalised distance to target: " << dist;
+    // ofLogNotice() << "Normalised distance to target: " << dist;
     float movementTime = max(minMovingTime, maxMovingTime * dist);
-    ofLogNotice() << "Movement time: " << movementTime;
+    // ofLogNotice() << "Movement time: " << movementTime;
+    float spinWaitTime = 2.f;
+    float spinTime = (movementTime - spinWaitTime) * 0.75f;
 
     viewTargetAnim.setDuration(movementTime);
     viewTargetAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
     viewTargetAnim.setCurve(AnimCurve::EASE_IN_EASE_OUT);
     viewTargetAnim.animateToAfterDelay(1.f, delayS);
 
+    spinSmooth.pause();
+    spinSmooth.reset(0.f);
+    spinSmooth.setDuration(spinTime);
+    spinSmooth.setRepeatType(AnimRepeat::PLAY_ONCE);
+    spinSmooth.setCurve(AnimCurve::EASE_IN_EASE_OUT);
+    spinSmooth.animateToAfterDelay(1.f, spinWaitTime);
+
     drillZoomAnim.pause();
     drill = false;
     currentZoomSmooth.warmUp = 3.f;
     currentZoomSmooth.speed = .1f;
-    currentZoomSmooth.setTarget(3.f);
+    currentZoomSmooth.setTarget(flyHeight);
 }
 
 void ofApp::playSequence(int step)
@@ -1308,7 +1369,7 @@ void ofApp::playSequence(int step)
 void ofApp::nextStep()
 {
     sequence_step++;
-    if (sequence_step >= sequence.size())
+    if (sequence_step >= (int)sequence.size())
     {
         sequencePlaying = false;
         // stop recording
@@ -1316,28 +1377,48 @@ void ofApp::nextStep()
     }
 
     ofLog() << "Sequence step " + ofToString(sequence_step);
-    POI poi = sequence[sequence_step];
-    if (!tilesets.contains(poi.tileset))
-    {
-        ofLogWarning() << poi.tileset << " not loaded in Layout";
-        sequencePlaying = false;
-        return;
-    }
-    currentTileSet = &tilesets[poi.tileset];
-    ofVec2f coords = globalToWorld(tilesets[poi.tileset].viewTargets[poi.poi], &tilesets[poi.tileset]);
+    SequenceEvent *ev = sequence[sequence_step].get();
 
-    setViewTarget(coords);
+    if (auto *a = dynamic_cast<POI *>(ev))
+    {
+        std::string tileset = a->tileset;
+
+        if (!tilesets.contains(tileset))
+        {
+            ofLogWarning() << tileset << " not loaded in Layout";
+            sequencePlaying = false;
+            return;
+        }
+        currentTileSet = &tilesets[tileset];
+        ofVec2f coords = globalToWorld(tilesets[tileset].viewTargets[a->poi], &tilesets[tileset]);
+
+        setViewTarget(coords);
+    }
+    else if (auto *b = dynamic_cast<ParameterChange *>(ev))
+    {
+        ofLog() << "set parameter " << b->parameter << " to " << ofToString(b->value);
+        if (b->parameter == "drillSpeed")
+            drillSpeed = b->value;
+        else if (b->parameter == "spinSpeed")
+            spinSpeed = b->value;
+        else if (b->parameter == "drillDepth")
+            drillDepth = b->value;
+        else if (b->parameter == "flyHeight")
+            flyHeight = b->value;
+        else if (b->parameter == "thetaSpeed")
+            thetaSpeed = b->value;
+        nextStep();
+    }
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 {
     if (ev.who == &viewTargetAnim)
     {
-        // currentZoomSmooth.setTarget(1.3f, false);
         drillZoomAnim.setDuration(8);
         drillZoomAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
         drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
-        drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), 1.3f);
+        drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), drillDepth);
         drill = true;
     }
     else if (ev.who == &drillZoomAnim)
@@ -1481,14 +1562,18 @@ bool ofApp::saveLayout(const std::string &name)
         root.append(obj);
     }
 
-    return root.save(name, true);
+    fs::path savePath{scanRoot};
+    savePath /= name;
+    return root.save(savePath, true);
 }
 
 bool ofApp::loadLayout(const std::string &name)
 {
     ofLogNotice() << "ofApp::loadLayout";
     ofxJSON root;
-    bool result = root.open(name);
+    fs::path loadPath{scanRoot};
+    loadPath /= name;
+    bool result = root.open(loadPath);
 
     if (result)
         layout.clear();
@@ -1509,24 +1594,38 @@ bool ofApp::saveSequence(const std::string &name)
     ofLogNotice() << "ofApp::saveSequence";
     ofxJSON root;
 
-    for (const POI &poi : sequence)
+    for (auto &ev : sequence)
     {
         Json::Value obj;
-        obj["type"] = "poi";
-        obj["tileset"] = poi.tileset;
-        obj["poi"] = Json::Int(poi.poi);
+        if (auto *a = dynamic_cast<POI *>(ev.get()))
+        {
+            obj["type"] = "poi";
+            obj["tileset"] = a->tileset;
+            obj["poi"] = Json::Int(a->poi);
+        }
+        else if (auto *b = dynamic_cast<ParameterChange *>(ev.get()))
+        {
+            obj["type"] = "parameter";
+            obj["parameter"] = b->parameter;
+            obj["value"] = b->value;
+        }
 
         root.append(obj);
     }
 
-    return root.save(name, true);
+    fs::path savePath{scanRoot};
+    savePath /= name;
+    return root.save(savePath, true);
 }
 
 bool ofApp::loadSequence(const std::string &name)
 {
     ofLogNotice() << "ofApp::loadSequence";
     ofxJSON root;
-    bool result = root.open(name);
+
+    fs::path loadPath{scanRoot};
+    loadPath /= name;
+    bool result = root.open(loadPath);
 
     if (result)
         sequence.clear();
@@ -1540,7 +1639,14 @@ bool ofApp::loadSequence(const std::string &name)
             std::string tileset = root[i]["tileset"].asString();
             int poi = root[i]["poi"].asInt();
 
-            sequence.emplace_back(tileset, poi);
+            sequence.emplace_back(new POI(tileset, poi));
+        }
+        else if (type == "parameter")
+        {
+            std::string parameter = root[i]["parameter"].asString();
+            float value = root[i]["value"].asFloat();
+
+            sequence.emplace_back(new ParameterChange(parameter, value));
         }
     }
     return result;

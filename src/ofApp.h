@@ -77,10 +77,35 @@ struct LayoutPosition
     std::string relativeTo = "";
 };
 
-struct POI
+struct SequenceEvent
+{
+    std::string type;
+    virtual std::string toString()
+    {
+        return type;
+    }
+};
+
+struct POI : public SequenceEvent
 {
     std::string tileset;
     size_t poi;
+    POI(const std::string &t, size_t i) : tileset(t), poi(i) { type = "poi"; }
+    std::string toString() override
+    {
+        return type + "::" + tileset + "::" + ofToString(poi);
+    }
+};
+
+struct ParameterChange : SequenceEvent
+{
+    std::string parameter;
+    float value;
+    ParameterChange(const std::string &p, float v) : parameter(p), value(v) { type = "parameter"; }
+    std::string toString() override
+    {
+        return type + "::" + parameter + "::" + ofToString(value);
+    }
 };
 
 class ofApp : public ofBaseApp
@@ -150,6 +175,7 @@ public:
     int lastZoomLevel = 5;
     SmoothValueLinear currentTheta = {2.f, 0.f, -360.f, 720.f};
     bool cycleTheta = true;
+    float thetaSpeed = 0.1f;
 
     ofVec2f zoomCenterWorld = {0.f, 0.f};
     ofVec2f rotationCenterWorld = {0.f, 0.f};
@@ -163,7 +189,11 @@ public:
     bool focusViewTarget = false;
     float time;
     bool drill = false;
+    float drillDepth = 1.3f;
+    float flyHeight = 3.f;
     float drillSpeed = 0.1f;
+    float spinSpeed = 0.1f;
+    ofxAnimatableFloat spinSmooth;
 
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
@@ -177,7 +207,7 @@ public:
 
     int numberVisibleTiles = 0;
 
-    std::vector<POI> sequence;
+    std::vector<unique_ptr<SequenceEvent>> sequence;
     int sequence_step;
     bool sequencePlaying = false;
 
@@ -212,7 +242,9 @@ public:
     void calculateViewMatrix();
 
     // GUI stuff
+    bool hideGui = false;
     ofxImGui::Gui gui;
     std::vector<std::string> scanListOptions;
     void drawGUI();
+    bool disableInput = false;
 };

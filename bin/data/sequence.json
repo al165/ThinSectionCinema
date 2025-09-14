@@ -1,0 +1,23 @@
+[
+   {
+      "poi" : 10,
+      "tileset" : "Basalt01",
+      "type" : "poi"
+   },
+   {
+      "poi" : 5,
+      "tileset" : "Basalt01",
+      "type" : "poi"
+   },
+   {
+      "poi" : 5,
+      "tileset" : "Limestone01",
+      "type" : "poi"
+   },
+   {
+      "poi" : 8,
+      "tileset" : "Limestone01",
+      "type" : "poi"
+   }
+]
+

@@ -49,11 +49,8 @@ The (optional) `poi.csv` file should have the following headings: `index, x, y, 
 
 Copy `config_template.toml` to `bin/data/config.toml` and edit with the following options:
 
-- `scans_root` (required) Root folder of all scans. Must end in '/';
-- `scans` (required) List of tile scans and there positions `{name, position, of}`, where
-    - `name` (required) Name of tile scan.
-    - `position` (required) Position on scan, from `right`, `left`, `above`, `below`.
-    - `of` (optional) If specified, must a name of a (previously specified) tile set where the position is applied relative to.
+- `scans_root` (required) Root folder of all scans. Must end in '/'.
+- `scan_layout` (optional) JSON file to load the layout.
 - `min_moving_time`, `max_moving_time` (optional) Defaults 8.0, 45.0. Min/Maximum time (in seconds) to move between targets.
 - `recording_folder` (optional) Absolute path to folder that recordings will save to.
 - `recording_filename` (optional) Name of saved recording (without `.mp4`). If not specified, the default name will be the time and date.

@@ -11,10 +11,16 @@
 #include "AsyncTextureLoader.hpp"
 
 #include "ofxCsv.h"
+#include "ofxJSON.h"
 #include "ofxFFmpegRecorder.h"
 #include "ofxAnimatableFloat.h"
 
 #include <toml.hpp>
+
+#include "ofxImGui.h"
+
+#include <filesystem>
+namespace fs = std::filesystem;
 
 using Theta = int;
 using Zoom = int;
@@ -56,6 +62,27 @@ struct TileSet
     }
 };
 
+enum Position
+{
+    RIGHT,
+    BELOW,
+    LEFT,
+    ABOVE
+};
+
+struct LayoutPosition
+{
+    std::string name = "";
+    Position position = Position::RIGHT;
+    std::string relativeTo = "";
+};
+
+struct POI
+{
+    std::string tileset;
+    size_t poi;
+};
+
 class ofApp : public ofBaseApp
 {
 
@@ -75,6 +102,8 @@ public:
 
     std::string scanRoot;
     ofxCsv csv;
+
+    std::vector<LayoutPosition> layout;
 
     ofFbo fboFinal;
     ofShader blendShader;
@@ -114,8 +143,10 @@ public:
     const float minZoom = 8.f;
     const int maxZoomLevel = 1;
     const int minZoomLevel = 5;
-    SmoothValueLinear currentZoom = {2.f, 5.3f, 1.f, 8.f};
+    SmoothValueLinear currentZoomSmooth = {2.f, 5.3f, 1.f, 8.f};
+    ofxAnimatableFloat drillZoomAnim;
     int currentZoomLevel = 5;
+    Zoom currentZoom;
     int lastZoomLevel = 5;
     SmoothValueLinear currentTheta = {2.f, 0.f, -360.f, 720.f};
     bool cycleTheta = true;
@@ -146,13 +177,20 @@ public:
 
     int numberVisibleTiles = 0;
 
+    std::vector<POI> sequence;
+    int sequence_step;
+    bool sequencePlaying = false;
+
     bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
     bool updateCaches();
+    void addTileSet(const std::string &set, const std::string &position, const std::string &relativeToo);
     void loadTileList(const std::string &set);
     void preloadZoom(int level);
     void drawTiles(const TileSet &tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
+    void playSequence(int step = 0);
+    void nextStep();
     void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
     void valueReached(SmoothValueLinear::SmoothValueEvent &ev);
 
@@ -162,5 +200,19 @@ public:
     ofVec2f globalToWorld(const ofVec2f &coords, const TileSet *tileset) const;
     ofVec2f worldToGlobal(const ofVec2f &coords, const TileSet *tileset) const;
 
+    void jumpTo(const ofVec2f &worldCoords);
+    void jumpTo(const POI &poi);
+    void jumpZoom(float zoomLevel);
+
+    bool saveLayout(const std::string &name);
+    bool loadLayout(const std::string &name);
+    bool saveSequence(const std::string &name);
+    bool loadSequence(const std::string &name);
+
     void calculateViewMatrix();
+
+    // GUI stuff
+    ofxImGui::Gui gui;
+    std::vector<std::string> scanListOptions;
+    void drawGUI();
 };

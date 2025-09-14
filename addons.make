@@ -1,3 +1,5 @@
 ofxThreadedImageLoader
 ofxAnimatable
 ofxCsv
+ofxImGui
+ofxJSON

@@ -1,0 +1,13 @@
+[
+   {
+      "name" : "Basalt01",
+      "position" : "right",
+      "relativeTo" : ""
+   },
+   {
+      "name" : "Limestone01",
+      "position" : "below",
+      "relativeTo" : "Basalt01"
+   }
+]
+

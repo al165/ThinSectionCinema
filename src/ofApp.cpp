@@ -36,65 +36,7 @@ void ofApp::setup()
     }
     scanRoot.assign(rootFolder.value());
 
-    auto scans = tbl["scans"];
-    ofLogNotice() << scans;
-    ofLogNotice() << scans.type();
-    if (!scans)
-    {
-        ofLogError() << "no 'scans' in config.toml";
-        return;
-    }
-
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-    toml::array *arr = scans.as_array();
-    int count = 0;
-    arr->for_each([&](auto &&el)
-                  { ofLog() << el;
-                    ofLog() << el.at_path("name");
-                    ofLog() << el.at_path("position"); 
-                    ofLog() << count; 
-
-                    auto table = el.as_table();
-                    std::string name = table->at("name").as_string()->get();
-
-                    loadTileList(name);
-
-                    tilesetList.push_back(&tilesets[name]);
-
-                    if(count > 0) {
-                        // position the tileset
-                        std::string position = table->at("position").as_string()->get();
-                        
-                        TileSet *prevTileset= tilesetList[count - 1];
-                        if(table->contains("of")) {
-                            std::string ofName = table->at("of").as_string()->get();
-                            if (tilesets.contains(ofName))
-                                prevTileset = &tilesets.at(ofName);
-                            
-                        }
-
-                        ofVec2f prevSize = prevTileset->zoomWorldSizes[zoom];
-                        ofVec2f prevOffset = prevTileset->offset;
-
-                        TileSet *thisTileset = &tilesets[name];
-                        ofVec2f thisSize = thisTileset->zoomWorldSizes[zoom];
-
-                        if(position == "right") {
-                            thisTileset->offset.x = prevOffset.x + prevSize.x;
-                            thisTileset->offset.y = prevOffset.y;
-                        } else if (position == "below") {
-                            thisTileset->offset.x = prevOffset.x;
-                            thisTileset->offset.y = prevOffset.y + prevSize.y;
-                        } else if (position == "left") {
-                            thisTileset->offset.x = prevOffset.x - thisSize.x;
-                            thisTileset->offset.y = prevOffset.y;
-                        } else {
-                            thisTileset->offset.x = prevOffset.x;
-                            thisTileset->offset.y = prevOffset.y - thisSize.y;
-                        }
-                    }
-
-                    count++; });
+    std::optional<std::string> layout = tbl["scan_layout"].value<std::string>();
 
     recordingFolder = tbl["recording_folder"].value<std::string>();
     recordingFileName = tbl["recording_filename"].value<std::string>();
@@ -105,9 +47,20 @@ void ofApp::setup()
 
     ofLogNotice() << "Loading config.toml:";
     ofLogNotice() << " - scans_root: " << rootFolder.value_or("<empty>");
+    ofLogNotice() << " - scans_layout: " << layout.value_or("<empty>");
     ofLogNotice() << " - recording_folder: " << recordingFolder.value_or("<empty>");
     ofLogNotice() << " - recording_filename: " << recordingFileName.value_or("<empty>");
     ofLogNotice() << " - recording_fps: " << fps.value();
+
+    ofDirectory scanDir{scanRoot};
+    scanDir.listDir();
+    auto scanDirFiles = scanDir.getFiles();
+
+    for (const ofFile &scanDirFile : scanDirFiles)
+    {
+        if (scanDirFile.isDirectory())
+            scanListOptions.push_back(scanDirFile.getFileName());
+    }
 
     recordingFps = fps.value_or(30.f);
     minMovingTime = minMove.value_or(8.f);
@@ -121,28 +74,20 @@ void ofApp::setup()
 
     rotationAngle.maxStep = 0.5f;
     rotationAngle.warmUp = 0.f;
-    currentZoom.maxStep = 0.5f;
-    currentZoom.warmUp = 3.f;
+    rotationAngle.epsilon = 0.5f;
+    currentZoomSmooth.maxStep = 0.5f;
+    currentZoomSmooth.warmUp = 3.f;
+    currentZoomSmooth.epsilon = 0.01f;
     currentTheta.warmUp = 0.0f;
 
-    currentTileSet = tilesetList[0];
-
-    currentView.offsetWorld = worldToGlobal({0.5f, 0.5f}, currentTileSet);
+    ofVec2f centerWorld(0, 0);
 
     zoomCenterWorld = {0.f, 0.f};
-    currentZoomLevel = std::floor(currentZoom.getValue());
-    currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+    currentZoomLevel = std::floor(currentZoomSmooth.getValue());
+    currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoomSmooth.getValue());
     screenRectangle = ofRectangle(0.f, 0.f, static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight()));
     screenCenter = screenRectangle.getBottomRight() / 2.f;
-    calculateViewMatrix();
-
-    preloadZoom(currentZoomLevel - 1);
-    preloadZoom(currentZoomLevel - 2);
-    updateCaches();
-
-    ofVec2f centerWorld = globalToWorld({0.5f, 0.5f}, currentTileSet);
-    ofLogNotice() << centerWorld;
-    currentView.offsetWorld.set(centerWorld);
     calculateViewMatrix();
 
     std::ofstream outfile;
@@ -155,8 +100,251 @@ void ofApp::setup()
 
     ofResetElapsedTimeCounter();
 
+    gui.setup(nullptr, true);
+
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
-    ofAddListener(currentZoom.valueReached, this, &ofApp::valueReached);
+    ofAddListener(drillZoomAnim.animFinished, this, &ofApp::animationFinished);
+    ofAddListener(currentZoomSmooth.valueReached, this, &ofApp::valueReached);
+
+    if (layout.has_value())
+        loadLayout(layout.value());
+
+    if (tilesetList.size())
+    {
+        currentTileSet = tilesetList[0];
+        currentView.offsetWorld = worldToGlobal({0.5f, 0.5f}, currentTileSet);
+        centerWorld = globalToWorld({0.5f, 0.5f}, currentTileSet);
+    }
+
+    loadSequence("sequence.json");
+    currentView.offsetWorld.set(centerWorld);
+    calculateViewMatrix();
+}
+
+void ofApp::drawGUI()
+{
+    gui.begin();
+    // ImGui::SetNextWindowPos(ofVec2f(ofGetWindowPositionX(), ofGetWindowPositionY()), ImGuiCond_Once);
+    // ImGui::SetNextWindowSize(ofVec2f(ofGetWidth(), ofGetHeight()), ImGuiCond_Once);
+    // ImGui::ShowDemoWindow();
+    ImGui::SetNextWindowPos(ImGui::GetWindowViewport()->Pos + ImVec2(ofGetWidth() - 400, 10), ImGuiCond_Once);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(320, 500), ImVec2(320, FLT_MAX));
+    // ImGui::SetNextWindowSize(ImVec2(320, ofGetHeight() * 0.5), ImGuiCond_Once);
+    ImGui::Begin("Scan manager", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+
+    if (ImGui::TreeNode("Layout"))
+    {
+        static size_t scan_selected_idx = 0;
+        const char *combo_preview_value = scanListOptions[scan_selected_idx].c_str();
+        if (ImGui::BeginCombo("Scan list", combo_preview_value))
+        {
+            static ImGuiTextFilter filter;
+            if (ImGui::IsWindowAppearing())
+            {
+                ImGui::SetKeyboardFocusHere();
+                filter.Clear();
+            }
+            ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
+            filter.Draw("##Filter", -FLT_MIN);
+
+            for (size_t n = 0; n < scanListOptions.size(); n++)
+            {
+                const bool is_selected = (scan_selected_idx == n);
+                if (filter.PassFilter(scanListOptions[n].c_str()))
+                    if (ImGui::Selectable(scanListOptions[n].c_str(), is_selected))
+                        scan_selected_idx = n;
+            }
+            ImGui::EndCombo();
+        }
+        static size_t relative_idx = 0;
+        static int position_selection_idx = 0;
+        const char *positions[] = {"right", "below", "left", "above"};
+
+        if (tilesetList.size() > 0)
+        {
+            ImGui::Combo("position", &position_selection_idx, positions, IM_ARRAYSIZE(positions));
+
+            std::string relative_to_preview = "<previous>";
+            if (relative_idx > 0)
+                relative_to_preview = tilesetList[relative_idx - 1]->name.c_str();
+
+            if (ImGui::BeginCombo("Relative list", relative_to_preview.c_str()))
+            {
+                static ImGuiTextFilter filter;
+                if (ImGui::IsWindowAppearing())
+                {
+                    ImGui::SetKeyboardFocusHere();
+                    filter.Clear();
+                }
+                ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
+                filter.Draw("##FilterRelative", -FLT_MIN);
+
+                for (size_t n = 0; n < tilesetList.size() + 1; n++)
+                {
+                    const bool is_selected = (relative_idx == n);
+                    if (n == 0)
+                    {
+                        if (ImGui::Selectable("<previous>", is_selected))
+                            relative_idx = n;
+                    }
+                    else
+                    {
+                        if (filter.PassFilter(tilesetList[n - 1]->name.c_str()))
+                            if (ImGui::Selectable(tilesetList[n - 1]->name.c_str(), is_selected))
+                                relative_idx = n;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        if (ImGui::Button("Add"))
+        {
+            if (tilesetList.size() > 0)
+            {
+                if (relative_idx > 0)
+                {
+                    ofLog() << "Adding scan " << scanListOptions[scan_selected_idx] << " " << positions[position_selection_idx] << " of " << tilesetList.at(relative_idx - 1)->name;
+                    addTileSet(scanListOptions[scan_selected_idx], positions[position_selection_idx], tilesetList.at(relative_idx - 1)->name);
+                }
+                else
+                {
+                    ofLog() << "Adding scan " << scanListOptions[scan_selected_idx] << " " << positions[position_selection_idx] << " of previous";
+                    addTileSet(scanListOptions[scan_selected_idx], positions[position_selection_idx], "");
+                }
+            }
+            else
+            {
+                ofLog() << "Adding scan " << scanListOptions[scan_selected_idx];
+                addTileSet(scanListOptions[scan_selected_idx], "", "");
+            }
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
+        if (ImGui::Button("Load layout"))
+            loadLayout("layout.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
+        if (ImGui::Button("Save layout"))
+            saveLayout("layout.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::TreePop();
+    }
+
+    if (ImGui::TreeNode("Explore"))
+    {
+        static size_t scan_explore_idx = 0;
+        static size_t scan_poi_idx = 0;
+        static std::string selectedTilesetName = "";
+
+        if (ImGui::BeginListBox("##expore-list-box", ImVec2(-FLT_MIN, 5 * ImGui::GetTextLineHeightWithSpacing())))
+        {
+            for (size_t n = 0; n < tilesetList.size(); n++)
+            {
+                const bool is_selected = (scan_explore_idx == n);
+                if (ImGui::Selectable(tilesetList[n]->name.c_str(), is_selected))
+                {
+                    scan_explore_idx = n;
+                    scan_poi_idx = 0;
+                    selectedTilesetName = tilesetList[n]->name;
+                }
+            }
+            ImGui::EndListBox();
+        }
+
+        if (ImGui::BeginTable("##table-poi", 4))
+        {
+            if (tilesetList.size() > 0 && selectedTilesetName.size() > 0)
+            {
+                for (size_t n = 0; n < tilesets[selectedTilesetName].viewTargets.size(); n++)
+                {
+                    const bool is_selected = (scan_poi_idx == n);
+                    ImGui::TableNextColumn();
+                    if (ImGui::Selectable(ofToString(n).c_str(), is_selected))
+                    {
+                        scan_poi_idx = n;
+
+                        ofVec2f coords = globalToWorld(tilesets[selectedTilesetName].viewTargets[n], &tilesets[selectedTilesetName]);
+                        jumpTo(coords);
+                        jumpZoom(1.5);
+                    }
+                }
+            }
+            ImGui::EndTable();
+        }
+
+        if (selectedTilesetName.size() > 0)
+        {
+            if (ImGui::Button("Add to sequence"))
+                sequence.emplace_back(selectedTilesetName, scan_poi_idx);
+        }
+
+        ImGui::TreePop();
+    }
+
+    if (ImGui::TreeNode("Sequence"))
+    {
+        static size_t selected_event = 0;
+        if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 7 * ImGui::GetTextLineHeightWithSpacing())))
+        {
+            ImGui::PushItemFlag(ImGuiItemFlags_AllowDuplicateId, true);
+            for (size_t i = 0; i < sequence.size(); i++)
+            {
+                POI poi = sequence[i];
+                std::string eventName = poi.tileset + "::" + ofToString(poi.poi);
+                const bool is_selected = (selected_event == i);
+                if (ImGui::Selectable(eventName.c_str(), is_selected))
+                {
+                    selected_event = i;
+                    jumpTo(poi);
+                    jumpZoom(1.5);
+                }
+
+                if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
+                {
+                    size_t n_next = i + (ImGui::GetMouseDragDelta(0).y < 0.f ? -1 : 1);
+                    if (n_next >= 0 && n_next < sequence.size())
+                    {
+                        sequence[i] = sequence[n_next];
+                        sequence[n_next] = poi;
+                        ImGui::ResetMouseDragDelta();
+                    }
+                }
+            }
+            ImGui::PopItemFlag();
+            ImGui::EndListBox();
+        }
+
+        if (ImGui::Button("Delete event"))
+            sequence.erase(sequence.begin() + selected_event);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
+        if (ImGui::Button("Load sequence"))
+            loadSequence("sequence.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
+        if (ImGui::Button("Save sequence"))
+            saveSequence("sequence.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::TreePop();
+    }
+
+    ImGui::End();
+    gui.end();
 }
 
 //--------------------------------------------------------------
@@ -183,17 +371,23 @@ void ofApp::update()
 
         if (drill)
         {
-            // ofLog() << dt;
-            float nextAngle = rotationAngle.getTargetValue() - (drillSpeed * currentZoom.lastChange * 1000.f);
+            drillZoomAnim.update(dt);
+            float nextAngle = rotationAngle.getTargetValue() + (drillSpeed * drillZoomAnim.getCurrentSpeed());
             rotationAngle.setTarget(nextAngle);
         }
     }
 
     calculateViewMatrix();
 
-    float prevZoom = currentZoom.getValue();
-    bool zoomUpdated = currentZoom.process(dt);
-    bool zoomingIn = prevZoom > currentZoom.getValue();
+    float prevZoom = currentZoomSmooth.getValue();
+
+    if (drill && drillZoomAnim.isAnimating() && !drillZoomAnim.getPaused())
+    {
+        currentZoomSmooth.jumpTo(drillZoomAnim.getCurrentValue());
+    }
+
+    bool zoomUpdated = currentZoomSmooth.process(dt);
+    bool zoomingIn = prevZoom > currentZoomSmooth.getValue();
 
     bool shouldLoadZoomIn = false;
     bool shouldLoadZoomOut = false;
@@ -201,7 +395,7 @@ void ofApp::update()
     if (zoomUpdated)
     {
         ofVec2f screenBeforeZoom = worldToScreen(zoomCenterWorld);
-        currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+        currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoomSmooth.getValue());
         calculateViewMatrix();
         ofVec2f screenAfterZoom = worldToScreen(zoomCenterWorld);
 
@@ -210,13 +404,13 @@ void ofApp::update()
         calculateViewMatrix();
 
         currentZoomLevel = std::clamp(
-            static_cast<int>(std::floor(currentZoom.getValue())),
+            static_cast<int>(std::floor(currentZoomSmooth.getValue())),
             maxZoomLevel, minZoomLevel);
 
         if (currentZoomLevel != lastZoomLevel)
         {
             float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
-            currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoom.getValue());
+            currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoomSmooth.getValue());
 
             zoomCenterWorld *= multiplier;
             rotationCenterWorld *= multiplier;
@@ -234,6 +428,8 @@ void ofApp::update()
             shouldLoadZoomIn = true;
         else if (currentView.scale < 0.6 && !zoomingIn)
             shouldLoadZoomOut = true;
+
+        currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     }
 
     rotationAngle.process(dt);
@@ -335,7 +531,9 @@ void ofApp::draw()
     ofBackground(0, 0, 0);
 
     for (const auto &[set, tileset] : tilesets)
+    {
         tileset.fboMain.draw(0, 0);
+    }
 
     ofVec2f cursor(static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY()));
     const float margin = 6.f;
@@ -447,21 +645,23 @@ void ofApp::draw()
 
         std::string status = std::format(
             "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {}",
-            currentZoom.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName);
+            currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName);
 
         ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
-        std::string viewMatrixStr = std::format(
-            "┏{:9.3f} {:9.3f} {:9.3f} {:9.3f}┓\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n┗{:9.3f} {:9.3f} {:9.3f} {:9.3f}┛",
-            viewMatrix._mat[0][0], viewMatrix._mat[1][0], viewMatrix._mat[2][0], viewMatrix._mat[3][0],
-            viewMatrix._mat[0][1], viewMatrix._mat[1][1], viewMatrix._mat[2][1], viewMatrix._mat[3][1],
-            viewMatrix._mat[0][2], viewMatrix._mat[1][2], viewMatrix._mat[2][2], viewMatrix._mat[3][2],
-            viewMatrix._mat[0][3], viewMatrix._mat[1][3], viewMatrix._mat[2][3], viewMatrix._mat[3][3]);
+        // std::string viewMatrixStr = std::format(
+        //     "┏{:9.3f} {:9.3f} {:9.3f} {:9.3f}┓\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n┗{:9.3f} {:9.3f} {:9.3f} {:9.3f}┛",
+        //     viewMatrix._mat[0][0], viewMatrix._mat[1][0], viewMatrix._mat[2][0], viewMatrix._mat[3][0],
+        //     viewMatrix._mat[0][1], viewMatrix._mat[1][1], viewMatrix._mat[2][1], viewMatrix._mat[3][1],
+        //     viewMatrix._mat[0][2], viewMatrix._mat[1][2], viewMatrix._mat[2][2], viewMatrix._mat[3][2],
+        //     viewMatrix._mat[0][3], viewMatrix._mat[1][3], viewMatrix._mat[2][3], viewMatrix._mat[3][3]);
 
-        ofDrawBitmapStringHighlight(viewMatrixStr, ofGetWidth() - 360, 20);
+        // ofDrawBitmapStringHighlight(viewMatrixStr, ofGetWidth() - 360, 20);
     }
 
     fpsCounter.newFrame();
+
+    drawGUI();
 }
 
 //--------------------------------------------------------------
@@ -542,12 +742,17 @@ void ofApp::keyPressed(int key)
     {
         // Skip
         viewTargetAnim.pause();
+        drillZoomAnim.pause();
         currentView.offsetWorld = viewTargetWorld;
 
         rotationAngle.skip();
-        currentZoom.skip();
+        currentZoomSmooth.skip();
         currentTheta.skip();
         drill = false;
+    }
+    else if (key == 'p')
+    {
+        playSequence();
     }
     else if (key == 'r')
     {
@@ -600,6 +805,7 @@ void ofApp::mouseDragged(int x, int y, int button)
 
     lastMouse.set(currentMouse);
     viewTargetAnim.pause();
+    drillZoomAnim.pause();
 }
 
 //--------------------------------------------------------------
@@ -622,11 +828,12 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
     rotationAngle.setTarget(rotationAngle.getTargetValue() - scrollX);
 
     zoomCenterWorld.set(screenToWorld({(float)x, (float)y}));
-    currentZoom.speed = 2.f;
-    currentZoom.warmUp = 0.f;
-    currentZoom.setTarget(currentZoom.getTargetValue() - scrollY * 0.015f);
+    currentZoomSmooth.speed = 2.f;
+    currentZoomSmooth.warmUp = 0.f;
+    currentZoomSmooth.setTarget(currentZoomSmooth.getTargetValue() - scrollY * 0.015f);
     focusViewTarget = false;
     viewTargetAnim.pause();
+    drillZoomAnim.pause();
 }
 
 //--------------------------------------------------------------
@@ -694,8 +901,6 @@ bool ofApp::updateCaches()
 {
     bool frameReady = true;
 
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
-
     // 1. Demote from MAIN
     for (auto it = cacheMain.begin(); it != cacheMain.end();)
     {
@@ -705,7 +910,7 @@ bool ofApp::updateCaches()
         Theta t2 = tilesets[key.tileset].t2;
 
         if (
-            (key.zoom != zoom) ||
+            (key.zoom != currentZoom) ||
             (key.theta != t1 && key.theta != t2) ||
             (!isVisible(key, tilesets[key.tileset].offset)))
         {
@@ -719,8 +924,8 @@ bool ofApp::updateCaches()
     // 2. Check which tiles are needed
     for (const auto &[set, tileset] : tilesets)
     {
-        const auto &v1 = tileset.avaliableTiles.at(zoom).at(tileset.t1);
-        const auto &v2 = tileset.avaliableTiles.at(zoom).at(tileset.t2);
+        const auto &v1 = tileset.avaliableTiles.at(currentZoom).at(tileset.t1);
+        const auto &v2 = tileset.avaliableTiles.at(currentZoom).at(tileset.t2);
 
         for (const auto &vec : {std::cref(v1), std::cref(v2)})
         {
@@ -853,17 +1058,20 @@ void ofApp::drawTiles(const TileSet &tileset)
     blendShader.setUniformTexture("texB", tileset.fboB.getTexture(), 2);
     blendShader.setUniform1f("alpha", tileset.blendAlpha);
     plane.draw();
+
     blendShader.end();
 
     if (showDebug)
     {
         // Draw poi
-
         ofSetColor(255, 255, 0);
-        for (auto &vt : tileset.viewTargets)
+        for (size_t i = 0; i < tileset.viewTargets.size(); i++)
+        // for (auto &vt : tileset.viewTargets)
         {
+            ofVec2f vt = tileset.viewTargets[i];
             ofVec2f poi = worldToScreen(globalToWorld(vt, &tileset));
             ofDrawTriangle(poi, poi + ofVec2f(8, 10), poi + ofVec2f(-8, 10));
+            ofDrawBitmapString(ofToString(i), poi);
         }
     }
     tileset.fboMain.end();
@@ -887,7 +1095,8 @@ void ofApp::loadTileList(const std::string &set)
 {
     ofLogNotice() << "ofApp::loadTileList()";
 
-    std::string tileSetPath = scanRoot + set;
+    fs::path tileSetPath{scanRoot};
+    tileSetPath /= set;
     ofLogNotice() << "Loading " << tileSetPath;
 
     ofDirectory tileDir{tileSetPath};
@@ -974,7 +1183,7 @@ void ofApp::loadTileList(const std::string &set)
     }
 
     // load POI list
-    if (csv.load(scanRoot + set + "/poi.csv"))
+    if (csv.load(tileSetPath / "poi.csv"))
     {
         ofLogNotice() << "Found poi.csv";
         bool skip_header = true;
@@ -998,6 +1207,63 @@ void ofApp::loadTileList(const std::string &set)
     tileset.t1 = tileset.thetaLevels[0];
     tileset.t2 = tileset.thetaLevels[1];
     tilesets[set] = tileset;
+}
+
+void ofApp::addTileSet(const std::string &name, const std::string &position = "", const std::string &relativeToo = "")
+{
+    ofLog() << "ofApp::addTileSet()";
+    if (name.size() == 0)
+        return;
+
+    loadTileList(name);
+
+    LayoutPosition positionStruct;
+    positionStruct.name = name;
+
+    if (position.size() > 0 && tilesetList.size() > 0)
+    {
+        TileSet *prevTileset = tilesetList[tilesetList.size() - 1];
+        if (relativeToo.size() > 0 && tilesets.contains(relativeToo))
+            prevTileset = &tilesets.at(relativeToo);
+
+        positionStruct.relativeTo = prevTileset->name;
+
+        ofVec2f prevSize = prevTileset->zoomWorldSizes[currentZoom];
+        ofVec2f prevOffset = prevTileset->offset;
+
+        TileSet *thisTileset = &tilesets[name];
+        ofVec2f thisSize = thisTileset->zoomWorldSizes[currentZoom];
+
+        if (position == "right")
+        {
+            thisTileset->offset.x = prevOffset.x + prevSize.x;
+            thisTileset->offset.y = prevOffset.y;
+            positionStruct.position = Position::RIGHT;
+        }
+        else if (position == "below")
+        {
+            thisTileset->offset.x = prevOffset.x;
+            thisTileset->offset.y = prevOffset.y + prevSize.y;
+            positionStruct.position = Position::BELOW;
+        }
+        else if (position == "left")
+        {
+            thisTileset->offset.x = prevOffset.x - thisSize.x;
+            thisTileset->offset.y = prevOffset.y;
+            positionStruct.position = Position::LEFT;
+        }
+        else
+        {
+            thisTileset->offset.x = prevOffset.x;
+            thisTileset->offset.y = prevOffset.y - thisSize.y;
+            positionStruct.position = Position::ABOVE;
+        }
+    }
+
+    tilesetList.push_back(&tilesets[name]);
+    layout.push_back(positionStruct);
+
+    // update GUI dropdowns with new tileset
 }
 
 void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
@@ -1025,26 +1291,71 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewTargetAnim.setCurve(AnimCurve::EASE_IN_EASE_OUT);
     viewTargetAnim.animateToAfterDelay(1.f, delayS);
 
-    currentZoom.warmUp = 3.f;
-    currentZoom.setTarget(3.f);
-    currentZoom.speed = .1f;
+    drillZoomAnim.pause();
+    drill = false;
+    currentZoomSmooth.warmUp = 3.f;
+    currentZoomSmooth.speed = .1f;
+    currentZoomSmooth.setTarget(3.f);
+}
+
+void ofApp::playSequence(int step)
+{
+    sequencePlaying = true;
+    sequence_step = step - 1;
+    nextStep();
+}
+
+void ofApp::nextStep()
+{
+    sequence_step++;
+    if (sequence_step >= sequence.size())
+    {
+        sequencePlaying = false;
+        // stop recording
+        return;
+    }
+
+    ofLog() << "Sequence step " + ofToString(sequence_step);
+    POI poi = sequence[sequence_step];
+    if (!tilesets.contains(poi.tileset))
+    {
+        ofLogWarning() << poi.tileset << " not loaded in Layout";
+        sequencePlaying = false;
+        return;
+    }
+    currentTileSet = &tilesets[poi.tileset];
+    ofVec2f coords = globalToWorld(tilesets[poi.tileset].viewTargets[poi.poi], &tilesets[poi.tileset]);
+
+    setViewTarget(coords);
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 {
     if (ev.who == &viewTargetAnim)
     {
-        currentZoom.setTarget(1.3f, false);
+        // currentZoomSmooth.setTarget(1.3f, false);
+        drillZoomAnim.setDuration(8);
+        drillZoomAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
+        drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
+        drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), 1.3f);
         drill = true;
+    }
+    else if (ev.who == &drillZoomAnim)
+    {
+        drill = false;
+        if (sequencePlaying)
+            nextStep();
     }
 }
 
 void ofApp::valueReached(SmoothValueLinear::SmoothValueEvent &ev)
 {
-    if (ev.who == &currentZoom)
-    {
-        drill = false;
-    }
+    // if (ev.who == &currentZoomSmooth)
+    // {
+    //     drill = false;
+    //     if (sequencePlaying)
+    //         nextStep();
+    // }
 }
 
 ofVec2f ofApp::screenToWorld(const ofVec2f &coords)
@@ -1063,7 +1374,7 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const TileSet *tileset) cons
 {
     /*
         Converts normalised relative coordinates in [0, 1]^2 in tileset to world
-        coordinates.
+        coordinates (including tileset's global position).
     */
     if (tileset == nullptr)
     {
@@ -1071,11 +1382,10 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const TileSet *tileset) cons
         return coords;
     }
 
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
     try
     {
-        zoomSize.set(tileset->zoomWorldSizes.at(zoom));
+        zoomSize.set(tileset->zoomWorldSizes.at(currentZoom));
     }
     catch (const std::exception &e)
     {
@@ -1098,11 +1408,10 @@ ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const TileSet *tileset) cons
         return coords;
     }
 
-    int zoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     ofVec2f zoomSize(0.f, 0.f);
     try
     {
-        zoomSize.set(tileset->zoomWorldSizes.at(zoom));
+        zoomSize.set(tileset->zoomWorldSizes.at(currentZoom));
     }
     catch (const std::exception &e)
     {
@@ -1111,4 +1420,128 @@ ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const TileSet *tileset) cons
     }
 
     return (coords - tileset->offset) / zoomSize;
+}
+
+void ofApp::jumpTo(const ofVec2f &worldCoords)
+{
+    currentView.offsetWorld = worldCoords;
+    zoomCenterWorld.set(worldCoords);
+
+    viewTargetAnim.pause();
+}
+
+void ofApp::jumpTo(const POI &poi)
+{
+    if (!tilesets.contains(poi.tileset))
+    {
+        ofLogWarning() << poi.tileset << " not loaded in Layout";
+        return;
+    }
+    currentTileSet = &tilesets[poi.tileset];
+    ofVec2f coords = globalToWorld(tilesets[poi.tileset].viewTargets[poi.poi], &tilesets[poi.tileset]);
+    jumpTo(coords);
+}
+
+void ofApp::jumpZoom(float zoomLevel)
+{
+    drill = false;
+
+    currentZoomSmooth.speed = 2.f;
+    currentZoomSmooth.warmUp = 0.f;
+    currentZoomSmooth.jumpTo(zoomLevel);
+    focusViewTarget = false;
+}
+
+bool ofApp::saveLayout(const std::string &name)
+{
+    ofxJSON root;
+
+    for (const LayoutPosition &layoutStruct : layout)
+    {
+        Json::Value obj;
+        obj["name"] = layoutStruct.name;
+        obj["relativeTo"] = layoutStruct.relativeTo;
+        switch (layoutStruct.position)
+        {
+        case Position::RIGHT:
+            obj["position"] = "right";
+            break;
+        case Position::BELOW:
+            obj["position"] = "below";
+            break;
+        case Position::LEFT:
+            obj["position"] = "left";
+            break;
+        case Position::ABOVE:
+            obj["position"] = "above";
+            break;
+        default:
+            break;
+        }
+        root.append(obj);
+    }
+
+    return root.save(name, true);
+}
+
+bool ofApp::loadLayout(const std::string &name)
+{
+    ofLogNotice() << "ofApp::loadLayout";
+    ofxJSON root;
+    bool result = root.open(name);
+
+    if (result)
+        layout.clear();
+
+    for (Json::ArrayIndex i = 0; i < root.size(); ++i)
+    {
+        std::string name = root[i]["name"].asString();
+        std::string position = root[i]["position"].asString();
+        std::string relativeTo = root[i]["relativeTo"].asString();
+
+        addTileSet(name, position, relativeTo);
+    }
+    return result;
+}
+
+bool ofApp::saveSequence(const std::string &name)
+{
+    ofLogNotice() << "ofApp::saveSequence";
+    ofxJSON root;
+
+    for (const POI &poi : sequence)
+    {
+        Json::Value obj;
+        obj["type"] = "poi";
+        obj["tileset"] = poi.tileset;
+        obj["poi"] = Json::Int(poi.poi);
+
+        root.append(obj);
+    }
+
+    return root.save(name, true);
+}
+
+bool ofApp::loadSequence(const std::string &name)
+{
+    ofLogNotice() << "ofApp::loadSequence";
+    ofxJSON root;
+    bool result = root.open(name);
+
+    if (result)
+        sequence.clear();
+
+    for (Json::ArrayIndex i = 0; i < root.size(); ++i)
+    {
+        std::string type = root[i]["type"].asString();
+
+        if (type == "poi")
+        {
+            std::string tileset = root[i]["tileset"].asString();
+            int poi = root[i]["poi"].asInt();
+
+            sequence.emplace_back(tileset, poi);
+        }
+    }
+    return result;
 }

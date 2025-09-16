@@ -65,7 +65,7 @@ void ofApp::setup()
     recordingFps = fps.value_or(30.f);
     minMovingTime = minMove.value_or(8.f);
     maxMovingTime = maxMove.value_or(8.f);
-    drillSpeed = drillSpeedConfig.value_or(0.1f);
+    drillSpeed = drillSpeedConfig.value_or(0.4f);
 
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setScale(1, -1, 1);
@@ -129,7 +129,8 @@ void ofApp::drawGUI()
     ImGui::Begin("Thin Section Cinema", NULL, ImGuiWindowFlags_AlwaysAutoResize);
 
     ImGuiIO &io = ImGui::GetIO();
-    disableInput = io.WantCaptureMouse;
+    disableMouse = io.WantCaptureMouse;
+    disableKeyboard = io.WantCaptureKeyboard;
 
     if (ImGui::TreeNode("Layout"))
     {
@@ -157,7 +158,9 @@ void ofApp::drawGUI()
         }
         static size_t relative_idx = 0;
         static int position_selection_idx = 0;
+        static int align_selection_idx = 0;
         const char *positions[] = {"right", "below", "left", "above"};
+        const char *alignments[] = {"begin", "center", "end"};
 
         if (tilesetList.size() > 0)
         {
@@ -167,7 +170,7 @@ void ofApp::drawGUI()
             if (relative_idx > 0)
                 relative_to_preview = tilesetList[relative_idx - 1]->name.c_str();
 
-            if (ImGui::BeginCombo("Relative list", relative_to_preview.c_str()))
+            if (ImGui::BeginCombo("Relative to", relative_to_preview.c_str()))
             {
                 static ImGuiTextFilter filter;
                 if (ImGui::IsWindowAppearing())
@@ -195,6 +198,8 @@ void ofApp::drawGUI()
                 }
                 ImGui::EndCombo();
             }
+
+            ImGui::Combo("alignment", &align_selection_idx, alignments, IM_ARRAYSIZE(alignments));
         }
 
         if (ImGui::Button("Add"))
@@ -204,18 +209,26 @@ void ofApp::drawGUI()
                 if (relative_idx > 0)
                 {
                     ofLog() << "Adding scan " << scanListOptions[scan_selected_idx] << " " << positions[position_selection_idx] << " of " << tilesetList.at(relative_idx - 1)->name;
-                    addTileSet(scanListOptions[scan_selected_idx], positions[position_selection_idx], tilesetList.at(relative_idx - 1)->name);
+                    addTileSet(
+                        scanListOptions[scan_selected_idx],
+                        positions[position_selection_idx],
+                        alignments[align_selection_idx],
+                        tilesetList.at(relative_idx - 1)->name);
                 }
                 else
                 {
                     ofLog() << "Adding scan " << scanListOptions[scan_selected_idx] << " " << positions[position_selection_idx] << " of previous";
-                    addTileSet(scanListOptions[scan_selected_idx], positions[position_selection_idx], "");
+                    addTileSet(
+                        scanListOptions[scan_selected_idx],
+                        positions[position_selection_idx],
+                        alignments[align_selection_idx],
+                        "");
                 }
             }
             else
             {
                 ofLog() << "Adding scan " << scanListOptions[scan_selected_idx];
-                addTileSet(scanListOptions[scan_selected_idx], "", "");
+                addTileSet(scanListOptions[scan_selected_idx], "", "", "");
             }
         }
 
@@ -293,19 +306,29 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Parameters"))
     {
-        ImGui::SliderFloat("drillSpeed", &drillSpeed, 0.f, 0.5f);
+        ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
         ImGui::SameLine();
-        if (ImGui::SmallButton("+##drill-speed"))
+        if (ImGui::SmallButton("+##zoomSpeed"))
+            sequence.push_back(std::make_unique<ParameterChange>("zoomSpeed", zoomSpeed));
+
+        ImGui::SliderFloat("drillSpeed", &drillSpeed, 0.f, 1.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##drillSpeed"))
             sequence.push_back(std::make_unique<ParameterChange>("drillSpeed", drillSpeed));
 
-        ImGui::SliderFloat("drillDepth", &drillDepth, 1.f, 3.f);
+        ImGui::SliderFloat("drillTime", &drillTime, 1.f, 20.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##drillTime"))
+            sequence.push_back(std::make_unique<ParameterChange>("drillTime", drillTime));
+
+        ImGui::SliderFloat("drillDepth", &drillDepth, 0.f, 3.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillDepth"))
             sequence.push_back(std::make_unique<ParameterChange>("drillDepth", drillDepth));
 
-        ImGui::SliderFloat("spinSpeed", &spinSpeed, 0.f, 0.5f);
+        ImGui::SliderFloat("spinSpeed", &spinSpeed, -0.5f, 0.5f);
         ImGui::SameLine();
-        if (ImGui::SmallButton("+##spin-speed"))
+        if (ImGui::SmallButton("+##spinSpeed"))
             sequence.push_back(std::make_unique<ParameterChange>("spinSpeed", spinSpeed));
 
         ImGui::SliderFloat("flyHeight", &flyHeight, 2.f, 5.f);
@@ -317,6 +340,21 @@ void ofApp::drawGUI()
         ImGui::SameLine();
         if (ImGui::SmallButton("+##thetaSpeed"))
             sequence.push_back(std::make_unique<ParameterChange>("thetaSpeed", thetaSpeed));
+
+        ImGui::SliderFloat("minMovingTime", &minMovingTime, 1.f, 30.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##minMovingTime"))
+            sequence.push_back(std::make_unique<ParameterChange>("minMovingTime", minMovingTime));
+
+        ImGui::SliderFloat("maxMovingTime", &maxMovingTime, 1.f, 60.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##maxMovingTime"))
+            sequence.push_back(std::make_unique<ParameterChange>("maxMovingTime", maxMovingTime));
+
+        ImGui::Checkbox("orientation", &targetOrientation);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##orientation"))
+            sequence.push_back(std::make_unique<ParameterChange>("orientation", (float)targetOrientation));
 
         ImGui::TreePop();
     }
@@ -429,6 +467,8 @@ void ofApp::update()
 
     calculateViewMatrix();
 
+    currentZoomSmooth.speed = zoomSpeed;
+
     if (drill && drillZoomAnim.isAnimating() && !drillZoomAnim.getPaused())
         currentZoomSmooth.jumpTo(drillZoomAnim.getCurrentValue());
 
@@ -469,11 +509,18 @@ void ofApp::update()
         currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     }
 
-    if (!drill)
+    if (!drill && !sequencePlaying)
     {
         spinSmooth.update(dt);
-        spinSmooth.getCurrentValue(); // Needed for getCurrentSpeed to work...
-        rotationAngle.setTarget(rotationAngle.getTargetValue() + spinSmooth.getCurrentSpeed() * spinSpeed);
+        spinSmooth.getCurrentValue(); // Needed for getCurrentSpeed to work?...
+        if (targetOrientation)
+        {
+            rotationAngle.setTarget(rotationAngle.getTargetValue() * (1.f - spinSmooth.getCurrentValue()));
+        }
+        else
+        {
+            rotationAngle.setTarget(rotationAngle.getTargetValue() + spinSmooth.getCurrentSpeed() * spinSpeed);
+        }
     }
 
     rotationAngle.process(dt);
@@ -711,6 +758,9 @@ void ofApp::exit()
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key)
 {
+    if (disableKeyboard)
+        return;
+
     if (key == OF_KEY_LEFT)
     {
         float nextTheta = currentTheta.getTargetValue() - 0.3f;
@@ -825,7 +875,7 @@ void ofApp::keyPressed(int key)
     else if (key == 'g')
     {
         hideGui = !hideGui;
-        disableInput = false;
+        disableMouse = false;
     }
 }
 
@@ -837,7 +887,7 @@ void ofApp::mouseMoved(int x, int y)
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button)
 {
-    if (disableInput)
+    if (disableMouse)
         return;
     ofVec2f currentMouse(x, y);
 
@@ -855,7 +905,7 @@ void ofApp::mouseDragged(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
-    if (disableInput)
+    if (disableMouse)
         return;
 
     lastMouse.set(x, y);
@@ -864,14 +914,14 @@ void ofApp::mousePressed(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseReleased(int x, int y, int button)
 {
-    if (disableInput)
+    if (disableMouse)
         return;
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
-    if (disableInput)
+    if (disableMouse)
         return;
 
     drill = false;
@@ -1151,91 +1201,143 @@ void ofApp::loadTileList(const std::string &set)
     tileSetPath /= set;
     ofLogNotice() << "Loading " << tileSetPath;
 
-    ofDirectory tileDir{tileSetPath};
-    tileDir.listDir();
-    auto zoomLevelsDirs = tileDir.getFiles();
-
-    if (zoomLevelsDirs.size() == 0)
-    {
-        ofLogWarning() << tileSetPath << " is empty";
-        return;
-    }
-
     TileSet tileset;
     tileset.name = set;
 
-    // get list of theta levels (as ints)
-    auto thetas = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
-    auto thetasDirs = thetas.getFiles();
-    tileset.thetaLevels.clear();
+    // Look for saved tilelist...
+    ofxJSON j;
 
-    for (const ofFile &thetaDir : thetasDirs)
+    if (j.open(fs::path(tileSetPath) /= "tilelist.json"))
     {
-        if (!thetaDir.isDirectory())
-            continue;
+        ofLog() << "Loading cached tilelist";
+        for (auto &tl : j["thetaLevels"])
+            tileset.thetaLevels.push_back(tl.asInt());
+        ofLog() << " - Loaded thetaLevels";
 
-        int theta = ofToInt(thetaDir.getFileName());
-        tileset.thetaLevels.push_back(theta);
-    }
-
-    std::sort(tileset.thetaLevels.begin(), tileset.thetaLevels.end());
-    ofLogNotice() << "- Theta levels:";
-    std::string levels = "";
-    for (const Theta t : tileset.thetaLevels)
-        levels += " " + ofToString(t);
-
-    ofLogNotice() << levels;
-
-    // Get all the tiles
-    for (const ofFile &zoomDir : zoomLevelsDirs)
-    {
-        if (!zoomDir.isDirectory())
-            continue;
-
-        Zoom zoom = ofToInt(zoomDir.getFileName());
-
-        ofLogNotice() << "- Zoom level " << zoom;
-
-        tiles = ofDirectory(tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/0.0/");
-        tiles.allowExt("jpg");
-        tiles.listDir();
-
-        auto tileFiles = tiles.getFiles();
-        ofLogNotice() << "  - Found " << ofToString(tileFiles.size()) + " tiles";
-
-        ofVec2f zoomSize(0.f, 0.f);
-
-        for (const Theta t : tileset.thetaLevels)
+        for (auto &zl : j["zoomWorldSizes"].getMemberNames())
         {
-            tileset.avaliableTiles[zoom][t].reserve(tileFiles.size());
+            ofVec2f size{j["zoomWorldSizes"][zl]["x"].asFloat(), j["zoomWorldSizes"][zl]["y"].asFloat()};
+            tileset.zoomWorldSizes[ofToInt(zl)] = size;
+        }
+        ofLog() << " - Loaded zoomWorldSizes";
+
+        for (auto &zl : j["avaliableTiles"].getMemberNames())
+        {
+            Zoom zoom = ofToInt(zl);
+            for (auto &t : j["avaliableTiles"][zl].getMemberNames())
+            {
+                int theta = ofToInt(t);
+                for (auto &tk : j["avaliableTiles"][zl][t])
+                {
+                    std::string fp = (tileSetPath / tk["filepath"].asString());
+                    TileKey tile{zoom, tk["x"].asInt(), tk["y"].asInt(), tk["width"].asInt(), tk["height"].asInt(), theta, fp, set};
+
+                    tileset.avaliableTiles[zoom][theta].push_back(tile);
+                }
+            }
+        }
+        ofLog() << " - Loaded avaliable tiles";
+    }
+    else
+    {
+        // Build JSON
+        ofDirectory tileDir{tileSetPath};
+        tileDir.listDir();
+        auto zoomLevelsDirs = tileDir.getFiles();
+
+        if (zoomLevelsDirs.size() == 0)
+        {
+            ofLogWarning() << tileSetPath << " is empty";
+            return;
         }
 
-        for (size_t i = 0; i < tileFiles.size(); i++)
-        {
-            std::string filename = tileFiles[i].getFileName();
-            auto basename = ofSplitString(filename, ".");
-            auto components = ofSplitString(basename[0], "x", true, true);
+        j["name"] = set;
 
-            int x = ofToInt(components[0]);
-            int y = ofToInt(components[1]);
-            int width = ofToInt(components[2]);
-            int height = ofToInt(components[3]);
+        // get list of theta levels (as ints)
+        auto thetas = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
+        auto thetasDirs = thetas.getFiles();
+        tileset.thetaLevels.clear();
+
+        for (const ofFile &thetaDir : thetasDirs)
+        {
+            if (!thetaDir.isDirectory())
+                continue;
+
+            int theta = ofToInt(thetaDir.getFileName());
+            tileset.thetaLevels.push_back(theta);
+            j["thetaLevels"].append(theta);
+        }
+
+        std::sort(tileset.thetaLevels.begin(), tileset.thetaLevels.end());
+        ofLogNotice() << "- Theta levels:";
+        std::string levels = "";
+        for (const Theta t : tileset.thetaLevels)
+            levels += " " + ofToString(t);
+
+        ofLogNotice() << levels;
+
+        // Get all the tiles
+        for (const ofFile &zoomDir : zoomLevelsDirs)
+        {
+            if (!zoomDir.isDirectory())
+                continue;
+
+            Zoom zoom = ofToInt(zoomDir.getFileName());
+
+            ofLogNotice() << "- Zoom level " << zoom;
+
+            tiles = ofDirectory(tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/0.0/");
+            tiles.allowExt("jpg");
+            tiles.listDir();
+
+            auto tileFiles = tiles.getFiles();
+            ofLogNotice() << "  - Found " << ofToString(tileFiles.size()) + " tiles";
+
+            ofVec2f zoomSize(0.f, 0.f);
 
             for (const Theta t : tileset.thetaLevels)
+                tileset.avaliableTiles[zoom][t].reserve(tileFiles.size());
+
+            for (size_t i = 0; i < tileFiles.size(); i++)
             {
-                std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
-                tileset.avaliableTiles[zoom][t].emplace_back(zoom, x, y, width, height, t, filepath, set);
+                std::string filename = tileFiles[i].getFileName();
+                auto basename = ofSplitString(filename, ".");
+                auto components = ofSplitString(basename[0], "x", true, true);
+
+                int x = ofToInt(components[0]);
+                int y = ofToInt(components[1]);
+                int width = ofToInt(components[2]);
+                int height = ofToInt(components[3]);
+
+                for (const Theta t : tileset.thetaLevels)
+                {
+                    std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
+                    tileset.avaliableTiles[zoom][t].emplace_back(zoom, x, y, width, height, t, filepath, set);
+                    ofxJSONElement obj;
+                    obj["x"] = x;
+                    obj["y"] = y;
+                    obj["width"] = width;
+                    obj["height"] = height;
+                    obj["t"] = t;
+                    obj["filepath"] = fs::relative(filepath, tileSetPath).c_str();
+                    j["avaliableTiles"][ofToString(zoom)][ofToString(t)].append(obj);
+                }
+
+                zoomSize.x = std::max(zoomSize.x, static_cast<float>(x + width));
+                zoomSize.y = std::max(zoomSize.y, static_cast<float>(y + height));
             }
 
-            zoomSize.x = std::max(zoomSize.x, static_cast<float>(x + width));
-            zoomSize.y = std::max(zoomSize.y, static_cast<float>(y + height));
+            tileset.zoomWorldSizes[zoom] = zoomSize;
+            j["zoomWorldSizes"][ofToString(zoom)]["x"] = zoomSize.x;
+            j["zoomWorldSizes"][ofToString(zoom)]["y"] = zoomSize.y;
         }
 
-        tileset.zoomWorldSizes[zoom] = zoomSize;
+        ofLogNotice() << "Saving tilelist JSON";
+        j.save(fs::path(tileSetPath) / "tilelist.json", true);
     }
 
     // load POI list
-    if (csv.load(tileSetPath / "poi.csv"))
+    if (csv.load(fs::path(tileSetPath) / "poi.csv"))
     {
         ofLogNotice() << "Found poi.csv";
         bool skip_header = true;
@@ -1261,7 +1363,7 @@ void ofApp::loadTileList(const std::string &set)
     tilesets[set] = tileset;
 }
 
-void ofApp::addTileSet(const std::string &name, const std::string &position = "", const std::string &relativeToo = "")
+void ofApp::addTileSet(const std::string &name, const std::string &position = "", const std::string &alignment = "", const std::string &relativeTo = "")
 {
     ofLog() << "ofApp::addTileSet()";
     if (name.size() == 0)
@@ -1275,8 +1377,8 @@ void ofApp::addTileSet(const std::string &name, const std::string &position = ""
     if (position.size() > 0 && tilesetList.size() > 0)
     {
         TileSet *prevTileset = tilesetList[tilesetList.size() - 1];
-        if (relativeToo.size() > 0 && tilesets.contains(relativeToo))
-            prevTileset = &tilesets.at(relativeToo);
+        if (relativeTo.size() > 0 && tilesets.contains(relativeTo))
+            prevTileset = &tilesets.at(relativeTo);
 
         positionStruct.relativeTo = prevTileset->name;
 
@@ -1286,27 +1388,45 @@ void ofApp::addTileSet(const std::string &name, const std::string &position = ""
         TileSet *thisTileset = &tilesets[name];
         ofVec2f thisSize = thisTileset->zoomWorldSizes[currentZoom];
 
+        float yOffset = 0.f;
+        float xOffset = 0.f;
+
+        if (position == "right" || position == "left")
+        {
+            if (alignment == "center")
+                yOffset = (prevSize.y - thisSize.y) / 2;
+            else if (alignment == "end")
+                yOffset = prevSize.y - thisSize.y;
+        }
+        else
+        {
+            if (alignment == "center")
+                xOffset = (prevSize.x - thisSize.x) / 2;
+            else if (alignment == "end")
+                xOffset = prevSize.x - thisSize.x;
+        }
+
         if (position == "right")
         {
             thisTileset->offset.x = prevOffset.x + prevSize.x;
-            thisTileset->offset.y = prevOffset.y;
+            thisTileset->offset.y = prevOffset.y + yOffset;
             positionStruct.position = Position::RIGHT;
         }
         else if (position == "below")
         {
-            thisTileset->offset.x = prevOffset.x;
+            thisTileset->offset.x = prevOffset.x + xOffset;
             thisTileset->offset.y = prevOffset.y + prevSize.y;
             positionStruct.position = Position::BELOW;
         }
         else if (position == "left")
         {
             thisTileset->offset.x = prevOffset.x - thisSize.x;
-            thisTileset->offset.y = prevOffset.y;
+            thisTileset->offset.y = prevOffset.y + yOffset;
             positionStruct.position = Position::LEFT;
         }
         else
         {
-            thisTileset->offset.x = prevOffset.x;
+            thisTileset->offset.x = prevOffset.x + xOffset;
             thisTileset->offset.y = prevOffset.y - thisSize.y;
             positionStruct.position = Position::ABOVE;
         }
@@ -1337,7 +1457,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     // ofLogNotice() << "Normalised distance to target: " << dist;
     float movementTime = max(minMovingTime, maxMovingTime * dist);
     // ofLogNotice() << "Movement time: " << movementTime;
-    float spinWaitTime = 2.f;
+    float spinWaitTime = 1.f;
     float spinTime = (movementTime - spinWaitTime) * 0.75f;
 
     viewTargetAnim.setDuration(movementTime);
@@ -1347,6 +1467,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
 
     spinSmooth.pause();
     spinSmooth.reset(0.f);
+
     spinSmooth.setDuration(spinTime);
     spinSmooth.setRepeatType(AnimRepeat::PLAY_ONCE);
     spinSmooth.setCurve(AnimCurve::EASE_IN_EASE_OUT);
@@ -1355,7 +1476,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     drillZoomAnim.pause();
     drill = false;
     currentZoomSmooth.warmUp = 3.f;
-    currentZoomSmooth.speed = .1f;
+    currentZoomSmooth.speed = .2f;
     currentZoomSmooth.setTarget(flyHeight);
 }
 
@@ -1399,14 +1520,25 @@ void ofApp::nextStep()
         ofLog() << "set parameter " << b->parameter << " to " << ofToString(b->value);
         if (b->parameter == "drillSpeed")
             drillSpeed = b->value;
+        else if (b->parameter == "zoomSpeed")
+            zoomSpeed = b->value;
         else if (b->parameter == "spinSpeed")
             spinSpeed = b->value;
         else if (b->parameter == "drillDepth")
             drillDepth = b->value;
+        else if (b->parameter == "drillTime")
+            drillTime = b->value;
         else if (b->parameter == "flyHeight")
             flyHeight = b->value;
         else if (b->parameter == "thetaSpeed")
             thetaSpeed = b->value;
+        else if (b->parameter == "minMovingTime")
+            minMovingTime = b->value;
+        else if (b->parameter == "maxMovingTime")
+            maxMovingTime = b->value;
+        else if (b->parameter == "orientation")
+            targetOrientation = b->value > 0.f;
+
         nextStep();
     }
 }
@@ -1415,7 +1547,7 @@ void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 {
     if (ev.who == &viewTargetAnim)
     {
-        drillZoomAnim.setDuration(8);
+        drillZoomAnim.setDuration(drillTime);
         drillZoomAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
         drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
         drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), drillDepth);
@@ -1431,12 +1563,6 @@ void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 
 void ofApp::valueReached(SmoothValueLinear::SmoothValueEvent &ev)
 {
-    // if (ev.who == &currentZoomSmooth)
-    // {
-    //     drill = false;
-    //     if (sequencePlaying)
-    //         nextStep();
-    // }
 }
 
 ofVec2f ofApp::screenToWorld(const ofVec2f &coords)
@@ -1544,9 +1670,6 @@ bool ofApp::saveLayout(const std::string &name)
         obj["relativeTo"] = layoutStruct.relativeTo;
         switch (layoutStruct.position)
         {
-        case Position::RIGHT:
-            obj["position"] = "right";
-            break;
         case Position::BELOW:
             obj["position"] = "below";
             break;
@@ -1556,7 +1679,22 @@ bool ofApp::saveLayout(const std::string &name)
         case Position::ABOVE:
             obj["position"] = "above";
             break;
+        case Position::RIGHT:
         default:
+            obj["position"] = "right";
+            break;
+        }
+        switch (layoutStruct.alignment)
+        {
+        case Alignment::CENTER:
+            obj["alignment"] = "center";
+            break;
+        case Alignment::END:
+            obj["alignment"] = "end";
+            break;
+        case Alignment::START:
+        default:
+            obj["alignment"] = "start";
             break;
         }
         root.append(obj);
@@ -1582,9 +1720,10 @@ bool ofApp::loadLayout(const std::string &name)
     {
         std::string name = root[i]["name"].asString();
         std::string position = root[i]["position"].asString();
+        std::string alignment = root[i]["alignment"].asString();
         std::string relativeTo = root[i]["relativeTo"].asString();
 
-        addTileSet(name, position, relativeTo);
+        addTileSet(name, position, alignment, relativeTo);
     }
     return result;
 }

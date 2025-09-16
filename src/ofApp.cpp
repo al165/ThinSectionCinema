@@ -1430,6 +1430,11 @@ void ofApp::addTileSet(const std::string &name, const std::string &position = ""
             thisTileset->offset.y = prevOffset.y - thisSize.y;
             positionStruct.position = Position::ABOVE;
         }
+
+        if (alignment == "center")
+            positionStruct.alignment = Alignment::CENTER;
+        else if (alignment == "end")
+            positionStruct.alignment = Alignment::END;
     }
 
     tilesetList.push_back(&tilesets[name]);

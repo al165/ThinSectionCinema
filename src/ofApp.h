@@ -70,10 +70,18 @@ enum Position
     ABOVE
 };
 
+enum Alignment
+{
+    START,
+    CENTER,
+    END
+};
+
 struct LayoutPosition
 {
     std::string name = "";
     Position position = Position::RIGHT;
+    Alignment alignment = Alignment::START;
     std::string relativeTo = "";
 };
 
@@ -164,11 +172,12 @@ public:
 
     TileSet *currentTileSet;
 
+    float zoomSpeed = 4.f;
     const float maxZoom = 1.f;
     const float minZoom = 8.f;
     const int maxZoomLevel = 1;
     const int minZoomLevel = 5;
-    SmoothValueLinear currentZoomSmooth = {2.f, 5.3f, 1.f, 8.f};
+    SmoothValueLinear currentZoomSmooth = {4.f, 5.3f, 0.f, 8.f};
     ofxAnimatableFloat drillZoomAnim;
     int currentZoomLevel = 5;
     Zoom currentZoom;
@@ -189,10 +198,12 @@ public:
     bool focusViewTarget = false;
     float time;
     bool drill = false;
-    float drillDepth = 1.3f;
-    float flyHeight = 3.f;
-    float drillSpeed = 0.1f;
-    float spinSpeed = 0.1f;
+    float drillTime = 8.f;
+    bool targetOrientation = false;
+    float drillDepth = 0.f;
+    float flyHeight = 4.f;
+    float drillSpeed = 0.4f;
+    float spinSpeed = 0.06f;
     ofxAnimatableFloat spinSmooth;
 
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
@@ -214,7 +225,7 @@ public:
     bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
     bool updateCaches();
-    void addTileSet(const std::string &set, const std::string &position, const std::string &relativeToo);
+    void addTileSet(const std::string &set, const std::string &position, const std::string &alignment, const std::string &relativeTo);
     void loadTileList(const std::string &set);
     void preloadZoom(int level);
     void drawTiles(const TileSet &tileset);
@@ -246,5 +257,6 @@ public:
     ofxImGui::Gui gui;
     std::vector<std::string> scanListOptions;
     void drawGUI();
-    bool disableInput = false;
+    bool disableMouse = false;
+    bool disableKeyboard = false;
 };

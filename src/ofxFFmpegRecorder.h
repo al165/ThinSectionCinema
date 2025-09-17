@@ -242,6 +242,8 @@ public:
     void saveThumbnail(const unsigned int &hour, const unsigned int &minute, const float &second, const std::string &output, glm::vec2 size = glm::vec2(0, 0),
                        ofRectangle crop = ofRectangle(0, 0, 0, 0), std::string videoFilePath = "");
 
+    LockFreeQueue<ofPixels *> m_Frames;
+
 private:
     std::string m_FFmpegPath, m_OutputPath;
     bool m_IsRecordVideo, m_IsRecordAudio;
@@ -290,7 +292,6 @@ private:
     std::vector<std::string> m_AdditionalInputArguments, m_AdditionalOutputArguments;
 
     std::thread m_Thread;
-    LockFreeQueue<ofPixels *> m_Frames;
 
     std::string mInputPixFmt = "rgb24";
     std::string mOutputPixFmt = "rgb24";

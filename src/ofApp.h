@@ -9,6 +9,8 @@
 #include "SmoothValue.h"
 #include "TileCacheLRU.hpp"
 #include "AsyncTextureLoader.hpp"
+#include "TilesetProperties.h"
+#include "TilesetManager.hpp"
 
 #include "ofxCsv.h"
 #include "ofxJSON.h"
@@ -22,9 +24,6 @@
 #include <filesystem>
 namespace fs = std::filesystem;
 
-using Theta = int;
-using Zoom = int;
-
 struct View
 {
     ofVec2f offsetWorld;
@@ -36,84 +35,6 @@ struct View
     float theta;
     ofRectangle viewWorld;
     // std::string tileset;
-};
-
-struct TileSet
-{
-    std::string name;
-    ofFbo fboA, fboB, fboMain;
-    ofVec2f offset;
-    Theta t1, t2;
-    float blendAlpha = 0.f;
-    std::vector<Theta> thetaLevels;
-    std::vector<ofVec2f> viewTargets;
-    std::unordered_map<Zoom, std::unordered_map<Theta, std::vector<TileKey>>> avaliableTiles;
-    std::unordered_map<Zoom, ofVec2f> zoomWorldSizes;
-    TileSet()
-    {
-        int fboW = ofGetWidth();
-        int fboH = ofGetHeight();
-        fboA.allocate(fboW, fboH, GL_RGBA);
-        fboB.allocate(fboW, fboH, GL_RGBA);
-        fboMain.allocate(fboW, fboH, GL_RGBA);
-
-        t1 = 0;
-        t2 = 1;
-    }
-};
-
-enum Position
-{
-    RIGHT,
-    BELOW,
-    LEFT,
-    ABOVE
-};
-
-enum Alignment
-{
-    START,
-    CENTER,
-    END
-};
-
-struct LayoutPosition
-{
-    std::string name = "";
-    Position position = Position::RIGHT;
-    Alignment alignment = Alignment::START;
-    std::string relativeTo = "";
-};
-
-struct SequenceEvent
-{
-    std::string type;
-    virtual std::string toString()
-    {
-        return type;
-    }
-};
-
-struct POI : public SequenceEvent
-{
-    std::string tileset;
-    size_t poi;
-    POI(const std::string &t, size_t i) : tileset(t), poi(i) { type = "poi"; }
-    std::string toString() override
-    {
-        return type + "::" + tileset + "::" + ofToString(poi);
-    }
-};
-
-struct ParameterChange : SequenceEvent
-{
-    std::string parameter;
-    float value;
-    ParameterChange(const std::string &p, float v) : parameter(p), value(v) { type = "parameter"; }
-    std::string toString() override
-    {
-        return type + "::" + parameter + "::" + ofToString(value);
-    }
 };
 
 class ofApp : public ofBaseApp
@@ -136,8 +57,6 @@ public:
     std::string scanRoot;
     ofxCsv csv;
 
-    std::vector<LayoutPosition> layout;
-
     ofFbo fboFinal;
     ofShader blendShader;
     ofPlanePrimitive plane;
@@ -147,6 +66,8 @@ public:
     std::optional<std::string> recordingFileName;
     bool frameReady = false;
     bool recording = false;
+    bool waitForFrames = false;
+    int numFramesQueued;
     int frameCount = 0;
     ofPixels framePixels;
     ofImage frame;
@@ -158,10 +79,8 @@ public:
 
     bool showDebug = true;
     bool drawCached = false;
-    ofFpsCounter fpsCounter = ofFpsCounter();
     float lastFrameTime;
 
-    ofDirectory tiles;
     AsyncTextureLoader loader;
     View currentView;
 
@@ -186,6 +105,7 @@ public:
     bool cycleTheta = true;
     float thetaSpeed = 0.1f;
 
+    bool centerZoom = true;
     ofVec2f zoomCenterWorld = {0.f, 0.f};
     ofVec2f rotationCenterWorld = {0.f, 0.f};
     ofVec2f lastMouse;
@@ -208,9 +128,7 @@ public:
 
     SmoothValueLinear rotationAngle = {2.f, 0.f, -360.f, 720.f};
 
-    std::unordered_map<std::string, TileSet> tilesets;
-    std::vector<TileSet *> tilesetList;
-    size_t tileset_index = 0;
+    TilesetManager tilesetManager;
 
     std::unordered_map<TileKey, ofTexture> cacheMain;
     TileCacheLRU cacheSecondary{600};
@@ -218,15 +136,16 @@ public:
 
     int numberVisibleTiles = 0;
 
-    std::vector<unique_ptr<SequenceEvent>> sequence;
-    int sequence_step;
+    std::vector<shared_ptr<SequenceEvent>> sequence;
+    std::vector<shared_ptr<POI>> sequencePoi;
+    int sequenceStep;
     bool sequencePlaying = false;
 
     bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
     bool updateCaches();
-    void addTileSet(const std::string &set, const std::string &position, const std::string &alignment, const std::string &relativeTo);
-    void loadTileList(const std::string &set);
+    // void addTileSet(const std::string &set, const std::string &position, const std::string &alignment, const std::string &relativeTo);
+    // void loadTileList(const std::string &set);
     void preloadZoom(int level);
     void drawTiles(const TileSet &tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
@@ -245,8 +164,6 @@ public:
     void jumpTo(const POI &poi);
     void jumpZoom(float zoomLevel);
 
-    bool saveLayout(const std::string &name);
-    bool loadLayout(const std::string &name);
     bool saveSequence(const std::string &name);
     bool loadSequence(const std::string &name);
 
@@ -255,7 +172,6 @@ public:
     // GUI stuff
     bool hideGui = false;
     ofxImGui::Gui gui;
-    std::vector<std::string> scanListOptions;
     void drawGUI();
     bool disableMouse = false;
     bool disableKeyboard = false;

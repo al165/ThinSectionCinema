@@ -52,15 +52,7 @@ void ofApp::setup()
     ofLogNotice() << " - recording_filename: " << recordingFileName.value_or("<empty>");
     ofLogNotice() << " - recording_fps: " << fps.value();
 
-    ofDirectory scanDir{scanRoot};
-    scanDir.listDir();
-    auto scanDirFiles = scanDir.getFiles();
-
-    for (const ofFile &scanDirFile : scanDirFiles)
-    {
-        if (scanDirFile.isDirectory())
-            scanListOptions.push_back(scanDirFile.getFileName());
-    }
+    tilesetManager.setRoot(scanRoot);
 
     recordingFps = fps.value_or(30.f);
     minMovingTime = minMove.value_or(8.f);
@@ -74,10 +66,10 @@ void ofApp::setup()
 
     rotationAngle.maxStep = 0.5f;
     rotationAngle.warmUp = 0.f;
-    rotationAngle.epsilon = 0.5f;
+    rotationAngle.epsilon = 0.001f;
     currentZoomSmooth.maxStep = 0.5f;
     currentZoomSmooth.warmUp = 3.f;
-    currentZoomSmooth.epsilon = 0.01f;
+    currentZoomSmooth.epsilon = 0.0001f;
     currentTheta.warmUp = 0.0f;
 
     ofVec2f centerWorld(0, 0);
@@ -104,14 +96,16 @@ void ofApp::setup()
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
     ofAddListener(drillZoomAnim.animFinished, this, &ofApp::animationFinished);
-    ofAddListener(currentZoomSmooth.valueReached, this, &ofApp::valueReached);
 
     if (layout.has_value())
-        loadLayout(layout.value());
-
-    if (tilesetList.size())
     {
-        currentTileSet = tilesetList[0];
+        tilesetManager.loadLayout(layout.value());
+        tilesetManager.computeLayout(currentZoom);
+    }
+
+    if (tilesetManager.tilesetList.size())
+    {
+        currentTileSet = tilesetManager.tilesetList[0];
         currentView.offsetWorld = worldToGlobal({0.5f, 0.5f}, currentTileSet);
         centerWorld = globalToWorld({0.5f, 0.5f}, currentTileSet);
     }
@@ -121,342 +115,45 @@ void ofApp::setup()
     calculateViewMatrix();
 }
 
-void ofApp::drawGUI()
-{
-    gui.begin();
-    ImGui::SetNextWindowPos(ImGui::GetWindowViewport()->Pos + ImVec2(ofGetWidth() - 400, 10), ImGuiCond_Once);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(320, 500), ImVec2(320, FLT_MAX));
-    ImGui::Begin("Thin Section Cinema", NULL, ImGuiWindowFlags_AlwaysAutoResize);
-
-    ImGuiIO &io = ImGui::GetIO();
-    disableMouse = io.WantCaptureMouse;
-    disableKeyboard = io.WantCaptureKeyboard;
-
-    if (ImGui::TreeNode("Layout"))
-    {
-        static size_t scan_selected_idx = 0;
-        const char *combo_preview_value = scanListOptions[scan_selected_idx].c_str();
-        if (ImGui::BeginCombo("Scan list", combo_preview_value))
-        {
-            static ImGuiTextFilter filter;
-            if (ImGui::IsWindowAppearing())
-            {
-                ImGui::SetKeyboardFocusHere();
-                filter.Clear();
-            }
-            ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-            filter.Draw("##Filter", -FLT_MIN);
-
-            for (size_t n = 0; n < scanListOptions.size(); n++)
-            {
-                const bool is_selected = (scan_selected_idx == n);
-                if (filter.PassFilter(scanListOptions[n].c_str()))
-                    if (ImGui::Selectable(scanListOptions[n].c_str(), is_selected))
-                        scan_selected_idx = n;
-            }
-            ImGui::EndCombo();
-        }
-        static size_t relative_idx = 0;
-        static int position_selection_idx = 0;
-        static int align_selection_idx = 0;
-        const char *positions[] = {"right", "below", "left", "above"};
-        const char *alignments[] = {"begin", "center", "end"};
-
-        if (tilesetList.size() > 0)
-        {
-            ImGui::Combo("position", &position_selection_idx, positions, IM_ARRAYSIZE(positions));
-
-            std::string relative_to_preview = "<previous>";
-            if (relative_idx > 0)
-                relative_to_preview = tilesetList[relative_idx - 1]->name.c_str();
-
-            if (ImGui::BeginCombo("Relative to", relative_to_preview.c_str()))
-            {
-                static ImGuiTextFilter filter;
-                if (ImGui::IsWindowAppearing())
-                {
-                    ImGui::SetKeyboardFocusHere();
-                    filter.Clear();
-                }
-                ImGui::SetNextItemShortcut(ImGuiMod_Ctrl | ImGuiKey_F);
-                filter.Draw("##FilterRelative", -FLT_MIN);
-
-                for (size_t n = 0; n < tilesetList.size() + 1; n++)
-                {
-                    const bool is_selected = (relative_idx == n);
-                    if (n == 0)
-                    {
-                        if (ImGui::Selectable("<previous>", is_selected))
-                            relative_idx = n;
-                    }
-                    else
-                    {
-                        if (filter.PassFilter(tilesetList[n - 1]->name.c_str()))
-                            if (ImGui::Selectable(tilesetList[n - 1]->name.c_str(), is_selected))
-                                relative_idx = n;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-            ImGui::Combo("alignment", &align_selection_idx, alignments, IM_ARRAYSIZE(alignments));
-        }
-
-        if (ImGui::Button("Add"))
-        {
-            if (tilesetList.size() > 0)
-            {
-                if (relative_idx > 0)
-                {
-                    ofLog() << "Adding scan " << scanListOptions[scan_selected_idx] << " " << positions[position_selection_idx] << " of " << tilesetList.at(relative_idx - 1)->name;
-                    addTileSet(
-                        scanListOptions[scan_selected_idx],
-                        positions[position_selection_idx],
-                        alignments[align_selection_idx],
-                        tilesetList.at(relative_idx - 1)->name);
-                }
-                else
-                {
-                    ofLog() << "Adding scan " << scanListOptions[scan_selected_idx] << " " << positions[position_selection_idx] << " of previous";
-                    addTileSet(
-                        scanListOptions[scan_selected_idx],
-                        positions[position_selection_idx],
-                        alignments[align_selection_idx],
-                        "");
-                }
-            }
-            else
-            {
-                ofLog() << "Adding scan " << scanListOptions[scan_selected_idx];
-                addTileSet(scanListOptions[scan_selected_idx], "", "", "");
-            }
-        }
-
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Load layout"))
-            loadLayout("layout.json");
-        ImGui::PopStyleColor(3);
-
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
-        if (ImGui::Button("Save layout"))
-            saveLayout("layout.json");
-        ImGui::PopStyleColor(3);
-
-        ImGui::TreePop();
-    }
-
-    if (ImGui::TreeNode("Explore"))
-    {
-        static size_t scan_explore_idx = 0;
-        static size_t scan_poi_idx = 0;
-        static std::string selectedTilesetName = "";
-
-        if (ImGui::BeginListBox("##expore-list-box", ImVec2(-FLT_MIN, 5 * ImGui::GetTextLineHeightWithSpacing())))
-        {
-            for (size_t n = 0; n < tilesetList.size(); n++)
-            {
-                const bool is_selected = (scan_explore_idx == n);
-                if (ImGui::Selectable(tilesetList[n]->name.c_str(), is_selected))
-                {
-                    scan_explore_idx = n;
-                    scan_poi_idx = 0;
-                    selectedTilesetName = tilesetList[n]->name;
-                }
-            }
-            ImGui::EndListBox();
-        }
-
-        if (ImGui::BeginTable("##table-poi", 4))
-        {
-            if (tilesetList.size() > 0 && selectedTilesetName.size() > 0)
-            {
-                for (size_t n = 0; n < tilesets[selectedTilesetName].viewTargets.size(); n++)
-                {
-                    const bool is_selected = (scan_poi_idx == n);
-                    ImGui::TableNextColumn();
-                    if (ImGui::Selectable(ofToString(n).c_str(), is_selected))
-                    {
-                        scan_poi_idx = n;
-
-                        ofVec2f coords = globalToWorld(tilesets[selectedTilesetName].viewTargets[n], &tilesets[selectedTilesetName]);
-                        jumpTo(coords);
-                        jumpZoom(1.5);
-                    }
-                }
-            }
-            ImGui::EndTable();
-        }
-
-        if (selectedTilesetName.size() > 0)
-        {
-            if (ImGui::Button("Add to sequence"))
-            {
-                POI ev(selectedTilesetName, scan_poi_idx);
-                sequence.emplace_back(new POI(selectedTilesetName, scan_poi_idx));
-            }
-        }
-
-        ImGui::TreePop();
-    }
-
-    if (ImGui::TreeNode("Parameters"))
-    {
-        ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##zoomSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("zoomSpeed", zoomSpeed));
-
-        ImGui::SliderFloat("drillSpeed", &drillSpeed, 0.f, 1.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##drillSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("drillSpeed", drillSpeed));
-
-        ImGui::SliderFloat("drillTime", &drillTime, 1.f, 20.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##drillTime"))
-            sequence.push_back(std::make_unique<ParameterChange>("drillTime", drillTime));
-
-        ImGui::SliderFloat("drillDepth", &drillDepth, 0.f, 3.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##drillDepth"))
-            sequence.push_back(std::make_unique<ParameterChange>("drillDepth", drillDepth));
-
-        ImGui::SliderFloat("spinSpeed", &spinSpeed, -0.5f, 0.5f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##spinSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("spinSpeed", spinSpeed));
-
-        ImGui::SliderFloat("flyHeight", &flyHeight, 2.f, 5.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##flyHeight"))
-            sequence.push_back(std::make_unique<ParameterChange>("flyHeight", flyHeight));
-
-        ImGui::SliderFloat("thetaSpeed", &thetaSpeed, 0.f, 1.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##thetaSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("thetaSpeed", thetaSpeed));
-
-        ImGui::SliderFloat("minMovingTime", &minMovingTime, 1.f, 30.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##minMovingTime"))
-            sequence.push_back(std::make_unique<ParameterChange>("minMovingTime", minMovingTime));
-
-        ImGui::SliderFloat("maxMovingTime", &maxMovingTime, 1.f, 60.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##maxMovingTime"))
-            sequence.push_back(std::make_unique<ParameterChange>("maxMovingTime", maxMovingTime));
-
-        ImGui::Checkbox("orientation", &targetOrientation);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##orientation"))
-            sequence.push_back(std::make_unique<ParameterChange>("orientation", (float)targetOrientation));
-
-        ImGui::TreePop();
-    }
-
-    if (ImGui::TreeNode("Sequence"))
-    {
-        static size_t selected_event = 0;
-        if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 7 * ImGui::GetTextLineHeightWithSpacing())))
-        {
-            ImGui::PushItemFlag(ImGuiItemFlags_AllowDuplicateId, true);
-            for (size_t i = 0; i < sequence.size(); i++)
-            {
-                SequenceEvent *ev = sequence[i].get();
-                const bool is_selected = (selected_event == i);
-                if ((int)i < sequence_step)
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
-                else if ((int)i == sequence_step)
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-
-                if (ImGui::Selectable(ev->toString().c_str(), is_selected))
-                {
-                    selected_event = i;
-                    if (auto *a = dynamic_cast<POI *>(ev))
-                    {
-                        jumpTo(*a);
-                        jumpZoom(1.5);
-                    }
-                }
-                if ((int)i <= sequence_step)
-                    ImGui::PopStyleColor();
-
-                if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
-                {
-                    size_t n_next = i + (ImGui::GetMouseDragDelta(0).y < 0.f ? -1 : 1);
-                    if (n_next >= 0 && n_next < sequence.size())
-                    {
-                        sequence[i].swap(sequence[n_next]);
-                        // sequence[n_next].;
-                        ImGui::ResetMouseDragDelta();
-                    }
-                }
-            }
-            ImGui::PopItemFlag();
-            ImGui::EndListBox();
-        }
-
-        if (ImGui::Button("Delete event"))
-            sequence.erase(sequence.begin() + selected_event);
-
-        ImGui::Dummy({10, 10});
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Load sequence"))
-            loadSequence("sequence.json");
-        ImGui::PopStyleColor(3);
-
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
-        if (ImGui::Button("Save sequence"))
-            saveSequence("sequence.json");
-        ImGui::PopStyleColor(3);
-
-        ImGui::Dummy({10, 10});
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Play sequence"))
-            playSequence();
-        ImGui::PopStyleColor(3);
-
-        ImGui::SameLine();
-        if (ImGui::Button("Play from selection"))
-            playSequence(selected_event);
-
-        ImGui::TreePop();
-    }
-
-    ImGui::End();
-    gui.end();
-}
-
 //--------------------------------------------------------------
 void ofApp::update()
 {
     loader.dispatchMainCallbacks(32);
 
-    frameReady = updateCaches();
-
     if (!frameReady)
+    {
+        frameReady = updateCaches();
+        return;
+    }
+
+    numFramesQueued = ffmpegRecorder.m_Frames.size();
+
+    if (numFramesQueued > 50)
+    {
+        waitForFrames = true;
+        return;
+    }
+    else if (waitForFrames && numFramesQueued == 0)
+        waitForFrames = false;
+
+    if (waitForFrames)
         return;
 
     float dt = frameReady ? (1.f / recordingFps) : 0.f;
 
-    currentView.offsetWorld += offsetDelta;
-    offsetDelta.set(0.f, 0.f);
-    if (cycleTheta)
-        currentTheta.setTarget(currentTheta.getTargetValue() + thetaSpeed);
+    if (centerZoom)
+        zoomCenterWorld = screenToWorld(screenCenter);
 
     viewTargetAnim.update(dt);
+    if (viewTargetAnim.isAnimating() && !viewTargetAnim.getPaused())
+    {
+        float t = viewTargetAnim.val();
+        ofVec2f tween = viewTargetWorld * t + viewStartWorld * (1.f - t);
+        offsetDelta.set(tween - currentView.offsetWorld);
+    }
+
+    if (cycleTheta)
+        currentTheta.setTarget(currentTheta.getTargetValue() + thetaSpeed);
 
     if (drill)
     {
@@ -499,8 +196,8 @@ void ofApp::update()
             viewTargetWorld *= multiplier;
             viewStartWorld *= multiplier;
             currentView.offsetWorld *= multiplier;
-            for (auto &ts : tilesets)
-                ts.second.offset *= multiplier;
+            offsetDelta *= multiplier;
+            tilesetManager.updateScale(multiplier);
 
             lastZoomLevel = currentZoomLevel;
             calculateViewMatrix();
@@ -509,18 +206,17 @@ void ofApp::update()
         currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     }
 
-    if (!drill && !sequencePlaying)
+    currentView.offsetWorld += offsetDelta;
+    offsetDelta.set(0.f, 0.f);
+
+    if (!drill && sequencePlaying)
     {
         spinSmooth.update(dt);
         spinSmooth.getCurrentValue(); // Needed for getCurrentSpeed to work?...
         if (targetOrientation)
-        {
             rotationAngle.setTarget(rotationAngle.getTargetValue() * (1.f - spinSmooth.getCurrentValue()));
-        }
         else
-        {
             rotationAngle.setTarget(rotationAngle.getTargetValue() + spinSmooth.getCurrentSpeed() * spinSpeed);
-        }
     }
 
     rotationAngle.process(dt);
@@ -554,51 +250,14 @@ void ofApp::update()
             currentTheta.setValue(currentTheta.getValue() - 180.f);
         }
 
-        for (auto &[set, tileset] : tilesets)
-        {
-            int thetaIndex = 0;
-            for (size_t i = 0; i < tileset.thetaLevels.size(); i++)
-            {
-                if (tileset.thetaLevels[i] > currentView.theta)
-                    break;
-                thetaIndex = i;
-            }
-
-            // compute alpha blend
-            tileset.t1 = tileset.thetaLevels[thetaIndex];
-            tileset.t2 = tileset.thetaLevels[(thetaIndex + 1) % tileset.thetaLevels.size()];
-            int t2;
-            if (thetaIndex == static_cast<int>(tileset.thetaLevels.size()) - 1)
-                t2 = tileset.thetaLevels[0] + 180;
-            else
-                t2 = tileset.t2;
-
-            tileset.blendAlpha = ofMap(currentView.theta, (float)tileset.t1, (float)(t2), 0.f, 1.f);
-        }
+        tilesetManager.updateTheta(currentView.theta);
     }
 
     currentView.viewWorld.set(
         screenToWorld({0.f + 6.f, 0.f + 6.f}),
         screenToWorld({static_cast<float>(ofGetWidth() - 12), static_cast<float>(ofGetHeight() - 12)}));
 
-    if (viewTargetAnim.isAnimating() && !viewTargetAnim.getPaused())
-    {
-        float t = viewTargetAnim.val();
-        ofVec2f tween = viewTargetWorld * t + viewStartWorld * (1.f - t);
-        offsetDelta.set(tween - currentView.offsetWorld);
-
-        if (!recording)
-        {
-            // load tiles further down animation path
-            View futureView(currentView);
-            float t2 = std::sqrtf(t);
-            ofVec2f tween2 = viewTargetWorld * t2 + viewStartWorld * (1.f - t2);
-
-            futureView.offsetWorld = screenToWorld(tween2);
-        }
-    }
-
-    fpsCounter.update();
+    frameReady = updateCaches();
 }
 
 //--------------------------------------------------------------
@@ -607,16 +266,14 @@ void ofApp::draw()
     float elapsedTime = ofGetElapsedTimef();
     lastFrameTime = elapsedTime;
 
-    for (const auto &[set, tileset] : tilesets)
+    for (const auto &[set, tileset] : tilesetManager.tilesets)
         drawTiles(tileset);
 
     fboFinal.begin();
     ofBackground(0, 0, 0);
 
-    for (const auto &[set, tileset] : tilesets)
-    {
+    for (const auto &[set, tileset] : tilesetManager.tilesets)
         tileset.fboMain.draw(0, 0);
-    }
 
     ofVec2f cursor(static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY()));
     const float margin = 6.f;
@@ -668,42 +325,67 @@ void ofApp::draw()
     }
 
     // ofDrawBitmapStringHighlight(ofToString(frameCount) + ", " + ofToString(time), 0, ofGetHeight());
+    std::string tilesetName = "<null>";
+    if (currentTileSet != nullptr)
+        tilesetName = currentTileSet->name;
+
+    if (recording && showDebug)
+    {
+        std::string eventName = "<null>";
+        if (sequence.size() > 0 && sequenceStep >= 0 && sequenceStep < (int)sequence.size())
+            eventName = sequence[sequenceStep]->toString();
+
+        std::string renderInfo = std::format(
+            "Frame: {} Time: {:.4f}s  currentZoomSmooth {:.4f}  Tileset: {}  Last event: {}", frameCount, time, currentZoomSmooth.getValue(), tilesetName, eventName);
+
+        ofDrawBitmapStringHighlight(renderInfo, 0, ofGetHeight() - 20);
+
+        if (waitForFrames)
+        {
+            std::string msg = std::format("  PAUSED FOR RENDER TO CATCH UP ({}) ", numFramesQueued);
+            ofDrawBitmapStringHighlight(msg, (ofGetWidth() - (msg.size() * 8)) / 2, ofGetHeight() / 2 - 4);
+        }
+    }
 
     fboFinal.end();
     fboFinal.draw(0, 0);
 
-    if (recording && frameReady)
+    if (recording && frameReady && !waitForFrames)
     {
         // save fboFinal to video buffer
         fboFinal.readToPixels(framePixels);
 
         if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
+        {
             ffmpegRecorder.addSingleFrame(framePixels);
 
-        if (time >= lastPathT + recordPathDt)
-        {
-            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet);
-            ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), currentTileSet);
+            // ofLog() << "Number of frames in queue: " << ffmpegRecorder.m_Frames.size();
+
+            if (time >= lastPathT + recordPathDt)
+            {
+                ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet);
+                ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), currentTileSet);
+
+                std::ofstream outfile;
+                outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
+
+                outfile << ofToString(time) << ","
+                        << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
+                        << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y)
+                        << std::endl;
+
+                lastPathT += recordPathDt;
+            }
 
             std::ofstream outfile;
-            outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
+            outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
+            outfile << frameCount << "," << ofToString(time) << ","
+                    << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
+                    << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
 
-            outfile << ofToString(time) << ","
-                    << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
-                    << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y)
-                    << std::endl;
-
-            lastPathT += recordPathDt;
+            frameCount++;
+            time += 1.f / recordingFps;
         }
-
-        std::ofstream outfile;
-        outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
-        outfile << frameCount << "," << ofToString(time) << ","
-                << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
-                << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
-
-        frameCount++;
-        time += 1.f / recordingFps;
     }
 
     if (recording)
@@ -714,17 +396,35 @@ void ofApp::draw()
         ofDrawRectangle(6, 6, ofGetWidth() - 12, ofGetHeight() - 12);
     }
 
-    if (showDebug)
+    if (showDebug && !recording)
     {
+        ofSetColor(0, 255, 255);
+        int indexPrevPOI = -1;
+        ofVec2f prevPoiPos;
+        for (size_t i = 0; i < sequence.size(); i++)
+        {
+            auto poi = dynamic_cast<POI *>(sequence[i].get());
+            if (poi == nullptr)
+                continue;
+
+            ofVec2f pos = tilesetManager[poi->tileset]->viewTargets[poi->poi];
+            pos = worldToScreen(globalToWorld(pos, tilesetManager[poi->tileset]));
+            // Draw marker
+            ofDrawLine(pos.x - 5, pos.y - 5, pos.x + 5, pos.y + 5);
+            ofDrawLine(pos.x + 5, pos.y - 5, pos.x - 5, pos.y + 5);
+
+            if (indexPrevPOI >= 0)
+                ofDrawLine(prevPoiPos, pos);
+
+            indexPrevPOI = (int)i;
+            prevPoiPos.set(pos);
+        }
+
         std::string coordinates = std::format(
             "Offset: {:.2f}, {:.2f}, ZoomCenter {:.2f}, {:.2f}, rotationAngle {:.2f}",
             currentView.offsetWorld.x, currentView.offsetWorld.y, zoomCenterWorld.x, zoomCenterWorld.y, rotationAngle.getValue());
 
         ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
-
-        std::string tilesetName = "<null>";
-        if (currentTileSet != nullptr)
-            tilesetName = currentTileSet->name;
 
         std::string status = std::format(
             "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {}",
@@ -741,8 +441,6 @@ void ofApp::draw()
 
         // ofDrawBitmapStringHighlight(viewMatrixStr, ofGetWidth() - 360, 20);
     }
-
-    fpsCounter.newFrame();
 
     if (!hideGui)
         drawGUI();
@@ -791,40 +489,8 @@ void ofApp::keyPressed(int key)
         drawCached = !drawCached;
     else if (key == 't')
         cycleTheta = !cycleTheta;
-    else if (key == 'n')
-    {
-        // if (nextTileSet == nullptr)
-        //     return;
-
-        // currentTileSet = nextTileSet;
-        tileset_index++;
-        try
-        {
-            currentTileSet = tilesetList[tileset_index];
-            ofVec2f t(currentTileSet->viewTargets.back());
-            currentTileSet->viewTargets.pop_back();
-            setViewTarget(globalToWorld(t, currentTileSet));
-        }
-        catch (const std::exception &e)
-        {
-            ofLogWarning() << "no next tileset";
-            return;
-        }
-    }
     else if (key == ' ')
-    {
-        if (currentTileSet == nullptr)
-            return;
-
-        drill = false;
-
-        if (currentTileSet->viewTargets.size())
-        {
-            ofVec2f t(currentTileSet->viewTargets.back());
-            currentTileSet->viewTargets.pop_back();
-            setViewTarget(globalToWorld(t, currentTileSet));
-        }
-    }
+        nextStep();
     else if (key == 's')
     {
         // Skip
@@ -867,6 +533,11 @@ void ofApp::keyPressed(int key)
         else
         {
             // save
+            while (ffmpegRecorder.m_Frames.size())
+            {
+                ofSleepMillis(100);
+            }
+            waitForFrames = false;
             ffmpegRecorder.stop();
             time = 0.f;
         }
@@ -929,6 +600,7 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
     rotationCenterWorld.set(screenToWorld({(float)x, (float)y}));
     rotationAngle.setTarget(rotationAngle.getTargetValue() - scrollX);
 
+    centerZoom = false;
     zoomCenterWorld.set(screenToWorld({(float)x, (float)y}));
     currentZoomSmooth.speed = 2.f;
     currentZoomSmooth.warmUp = 0.f;
@@ -936,6 +608,7 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
     focusViewTarget = false;
     viewTargetAnim.pause();
     drillZoomAnim.pause();
+    sequencePlaying = false;
 }
 
 //--------------------------------------------------------------
@@ -944,7 +617,7 @@ void ofApp::windowResized(int w, int h)
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
 
-    for (auto &[set, tileset] : tilesets)
+    for (auto &[set, tileset] : tilesetManager.tilesets)
     {
         tileset.fboA.allocate(w, h, GL_RGBA);
         tileset.fboB.allocate(w, h, GL_RGBA);
@@ -1008,13 +681,13 @@ bool ofApp::updateCaches()
     {
         TileKey key = it->first;
 
-        Theta t1 = tilesets[key.tileset].t1;
-        Theta t2 = tilesets[key.tileset].t2;
+        Theta t1 = tilesetManager[key.tileset]->t1;
+        Theta t2 = tilesetManager[key.tileset]->t2;
 
         if (
             (key.zoom != currentZoom) ||
             (key.theta != t1 && key.theta != t2) ||
-            (!isVisible(key, tilesets[key.tileset].offset)))
+            (!isVisible(key, tilesetManager[key.tileset]->offset)))
         {
             cacheSecondary.put(key, it->second);
             it = cacheMain.erase(it);
@@ -1024,7 +697,7 @@ bool ofApp::updateCaches()
     }
 
     // 2. Check which tiles are needed
-    for (const auto &[set, tileset] : tilesets)
+    for (const auto &[set, tileset] : tilesetManager.tilesets)
     {
         const auto &v1 = tileset.avaliableTiles.at(currentZoom).at(tileset.t1);
         const auto &v2 = tileset.avaliableTiles.at(currentZoom).at(tileset.t2);
@@ -1072,7 +745,7 @@ void ofApp::preloadZoom(int level)
     float top = currentView.viewWorld.getTop() / multiplier;
     float bottom = currentView.viewWorld.getBottom() / multiplier;
 
-    for (auto &[set, tileset] : tilesets)
+    for (auto &[set, tileset] : tilesetManager.tilesets)
     {
         // check if tileset in frame first
         // ofVec2f tilesetBounds = tileset.zoomWorldSizes[zoom];
@@ -1163,16 +836,17 @@ void ofApp::drawTiles(const TileSet &tileset)
 
     blendShader.end();
 
-    if (showDebug)
+    if (showDebug && !recording)
     {
         // Draw poi
         ofSetColor(255, 255, 0);
         for (size_t i = 0; i < tileset.viewTargets.size(); i++)
-        // for (auto &vt : tileset.viewTargets)
         {
             ofVec2f vt = tileset.viewTargets[i];
             ofVec2f poi = worldToScreen(globalToWorld(vt, &tileset));
             ofDrawTriangle(poi, poi + ofVec2f(8, 10), poi + ofVec2f(-8, 10));
+            poi.x += 20 * sin(TWO_PI * i / tileset.viewTargets.size());
+            poi.y += 10 + 20 * cos(TWO_PI * i / tileset.viewTargets.size());
             ofDrawBitmapString(ofToString(i), poi);
         }
     }
@@ -1193,256 +867,6 @@ void ofApp::calculateViewMatrix()
     viewMatrixInverted = viewMatrix.getInverse();
 }
 
-void ofApp::loadTileList(const std::string &set)
-{
-    ofLogNotice() << "ofApp::loadTileList()";
-
-    fs::path tileSetPath{scanRoot};
-    tileSetPath /= set;
-    ofLogNotice() << "Loading " << tileSetPath;
-
-    TileSet tileset;
-    tileset.name = set;
-
-    // Look for saved tilelist...
-    ofxJSON j;
-
-    if (j.open(fs::path(tileSetPath) /= "tilelist.json"))
-    {
-        ofLog() << "Loading cached tilelist";
-        for (auto &tl : j["thetaLevels"])
-            tileset.thetaLevels.push_back(tl.asInt());
-        ofLog() << " - Loaded thetaLevels";
-
-        for (auto &zl : j["zoomWorldSizes"].getMemberNames())
-        {
-            ofVec2f size{j["zoomWorldSizes"][zl]["x"].asFloat(), j["zoomWorldSizes"][zl]["y"].asFloat()};
-            tileset.zoomWorldSizes[ofToInt(zl)] = size;
-        }
-        ofLog() << " - Loaded zoomWorldSizes";
-
-        for (auto &zl : j["avaliableTiles"].getMemberNames())
-        {
-            Zoom zoom = ofToInt(zl);
-            for (auto &t : j["avaliableTiles"][zl].getMemberNames())
-            {
-                int theta = ofToInt(t);
-                for (auto &tk : j["avaliableTiles"][zl][t])
-                {
-                    std::string fp = (tileSetPath / tk["filepath"].asString());
-                    TileKey tile{zoom, tk["x"].asInt(), tk["y"].asInt(), tk["width"].asInt(), tk["height"].asInt(), theta, fp, set};
-
-                    tileset.avaliableTiles[zoom][theta].push_back(tile);
-                }
-            }
-        }
-        ofLog() << " - Loaded avaliable tiles";
-    }
-    else
-    {
-        // Build JSON
-        ofDirectory tileDir{tileSetPath};
-        tileDir.listDir();
-        auto zoomLevelsDirs = tileDir.getFiles();
-
-        if (zoomLevelsDirs.size() == 0)
-        {
-            ofLogWarning() << tileSetPath << " is empty";
-            return;
-        }
-
-        j["name"] = set;
-
-        // get list of theta levels (as ints)
-        auto thetas = ofDirectory(tileDir.getAbsolutePath() + "/2.0/");
-        auto thetasDirs = thetas.getFiles();
-        tileset.thetaLevels.clear();
-
-        for (const ofFile &thetaDir : thetasDirs)
-        {
-            if (!thetaDir.isDirectory())
-                continue;
-
-            int theta = ofToInt(thetaDir.getFileName());
-            tileset.thetaLevels.push_back(theta);
-            j["thetaLevels"].append(theta);
-        }
-
-        std::sort(tileset.thetaLevels.begin(), tileset.thetaLevels.end());
-        ofLogNotice() << "- Theta levels:";
-        std::string levels = "";
-        for (const Theta t : tileset.thetaLevels)
-            levels += " " + ofToString(t);
-
-        ofLogNotice() << levels;
-
-        // Get all the tiles
-        for (const ofFile &zoomDir : zoomLevelsDirs)
-        {
-            if (!zoomDir.isDirectory())
-                continue;
-
-            Zoom zoom = ofToInt(zoomDir.getFileName());
-
-            ofLogNotice() << "- Zoom level " << zoom;
-
-            tiles = ofDirectory(tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/0.0/");
-            tiles.allowExt("jpg");
-            tiles.listDir();
-
-            auto tileFiles = tiles.getFiles();
-            ofLogNotice() << "  - Found " << ofToString(tileFiles.size()) + " tiles";
-
-            ofVec2f zoomSize(0.f, 0.f);
-
-            for (const Theta t : tileset.thetaLevels)
-                tileset.avaliableTiles[zoom][t].reserve(tileFiles.size());
-
-            for (size_t i = 0; i < tileFiles.size(); i++)
-            {
-                std::string filename = tileFiles[i].getFileName();
-                auto basename = ofSplitString(filename, ".");
-                auto components = ofSplitString(basename[0], "x", true, true);
-
-                int x = ofToInt(components[0]);
-                int y = ofToInt(components[1]);
-                int width = ofToInt(components[2]);
-                int height = ofToInt(components[3]);
-
-                for (const Theta t : tileset.thetaLevels)
-                {
-                    std::string filepath = tileDir.getAbsolutePath() + "/" + ofToString(zoom) + ".0/" + ofToString(t) + ".0/" + filename;
-                    tileset.avaliableTiles[zoom][t].emplace_back(zoom, x, y, width, height, t, filepath, set);
-                    ofxJSONElement obj;
-                    obj["x"] = x;
-                    obj["y"] = y;
-                    obj["width"] = width;
-                    obj["height"] = height;
-                    obj["t"] = t;
-                    obj["filepath"] = fs::relative(filepath, tileSetPath).c_str();
-                    j["avaliableTiles"][ofToString(zoom)][ofToString(t)].append(obj);
-                }
-
-                zoomSize.x = std::max(zoomSize.x, static_cast<float>(x + width));
-                zoomSize.y = std::max(zoomSize.y, static_cast<float>(y + height));
-            }
-
-            tileset.zoomWorldSizes[zoom] = zoomSize;
-            j["zoomWorldSizes"][ofToString(zoom)]["x"] = zoomSize.x;
-            j["zoomWorldSizes"][ofToString(zoom)]["y"] = zoomSize.y;
-        }
-
-        ofLogNotice() << "Saving tilelist JSON";
-        j.save(fs::path(tileSetPath) / "tilelist.json", true);
-    }
-
-    // load POI list
-    if (csv.load(fs::path(tileSetPath) / "poi.csv"))
-    {
-        ofLogNotice() << "Found poi.csv";
-        bool skip_header = true;
-        for (auto row : csv)
-        {
-            if (skip_header)
-            {
-                skip_header = false;
-                continue;
-            }
-
-            float x = row.getFloat(1);
-            float y = row.getFloat(2);
-
-            tileset.viewTargets.emplace_back(x, y);
-        }
-    }
-    else
-        ofLogNotice() << "poi.csv not found.";
-
-    tileset.t1 = tileset.thetaLevels[0];
-    tileset.t2 = tileset.thetaLevels[1];
-    tilesets[set] = tileset;
-}
-
-void ofApp::addTileSet(const std::string &name, const std::string &position = "", const std::string &alignment = "", const std::string &relativeTo = "")
-{
-    ofLog() << "ofApp::addTileSet()";
-    if (name.size() == 0)
-        return;
-
-    loadTileList(name);
-
-    LayoutPosition positionStruct;
-    positionStruct.name = name;
-
-    if (position.size() > 0 && tilesetList.size() > 0)
-    {
-        TileSet *prevTileset = tilesetList[tilesetList.size() - 1];
-        if (relativeTo.size() > 0 && tilesets.contains(relativeTo))
-            prevTileset = &tilesets.at(relativeTo);
-
-        positionStruct.relativeTo = prevTileset->name;
-
-        ofVec2f prevSize = prevTileset->zoomWorldSizes[currentZoom];
-        ofVec2f prevOffset = prevTileset->offset;
-
-        TileSet *thisTileset = &tilesets[name];
-        ofVec2f thisSize = thisTileset->zoomWorldSizes[currentZoom];
-
-        float yOffset = 0.f;
-        float xOffset = 0.f;
-
-        if (position == "right" || position == "left")
-        {
-            if (alignment == "center")
-                yOffset = (prevSize.y - thisSize.y) / 2;
-            else if (alignment == "end")
-                yOffset = prevSize.y - thisSize.y;
-        }
-        else
-        {
-            if (alignment == "center")
-                xOffset = (prevSize.x - thisSize.x) / 2;
-            else if (alignment == "end")
-                xOffset = prevSize.x - thisSize.x;
-        }
-
-        if (position == "right")
-        {
-            thisTileset->offset.x = prevOffset.x + prevSize.x;
-            thisTileset->offset.y = prevOffset.y + yOffset;
-            positionStruct.position = Position::RIGHT;
-        }
-        else if (position == "below")
-        {
-            thisTileset->offset.x = prevOffset.x + xOffset;
-            thisTileset->offset.y = prevOffset.y + prevSize.y;
-            positionStruct.position = Position::BELOW;
-        }
-        else if (position == "left")
-        {
-            thisTileset->offset.x = prevOffset.x - thisSize.x;
-            thisTileset->offset.y = prevOffset.y + yOffset;
-            positionStruct.position = Position::LEFT;
-        }
-        else
-        {
-            thisTileset->offset.x = prevOffset.x + xOffset;
-            thisTileset->offset.y = prevOffset.y - thisSize.y;
-            positionStruct.position = Position::ABOVE;
-        }
-
-        if (alignment == "center")
-            positionStruct.alignment = Alignment::CENTER;
-        else if (alignment == "end")
-            positionStruct.alignment = Alignment::END;
-    }
-
-    tilesetList.push_back(&tilesets[name]);
-    layout.push_back(positionStruct);
-
-    // update GUI dropdowns with new tileset
-}
-
 void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
 {
     if (currentTileSet == nullptr)
@@ -1451,7 +875,6 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     viewTargetAnim.pause();
     viewTargetAnim.reset(0.f);
 
-    zoomCenterWorld.set(worldCoords);
     viewTargetWorld.set(worldCoords);
     viewStartWorld.set(currentView.offsetWorld);
 
@@ -1459,9 +882,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     float dist = worldToGlobal(viewStartWorld, currentTileSet).distance(worldToGlobal(viewTargetWorld, currentTileSet));
     // normalise where corner-to-corner is 1.0
     dist /= sqrtf(2);
-    // ofLogNotice() << "Normalised distance to target: " << dist;
     float movementTime = max(minMovingTime, maxMovingTime * dist);
-    // ofLogNotice() << "Movement time: " << movementTime;
     float spinWaitTime = 1.f;
     float spinTime = (movementTime - spinWaitTime) * 0.75f;
 
@@ -1483,42 +904,44 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     currentZoomSmooth.warmUp = 3.f;
     currentZoomSmooth.speed = .2f;
     currentZoomSmooth.setTarget(flyHeight);
+
+    centerZoom = true;
 }
 
 void ofApp::playSequence(int step)
 {
     sequencePlaying = true;
-    sequence_step = step - 1;
+    sequenceStep = step - 1;
     nextStep();
 }
 
 void ofApp::nextStep()
 {
-    sequence_step++;
-    if (sequence_step >= (int)sequence.size())
+    sequenceStep++;
+    if (sequenceStep >= (int)sequence.size())
     {
         sequencePlaying = false;
         // stop recording
         return;
     }
 
-    ofLog() << "Sequence step " + ofToString(sequence_step);
-    SequenceEvent *ev = sequence[sequence_step].get();
+    ofLog() << "Sequence step " + ofToString(sequenceStep);
+    SequenceEvent *ev = sequence[sequenceStep].get();
 
     if (auto *a = dynamic_cast<POI *>(ev))
     {
         std::string tileset = a->tileset;
 
-        if (!tilesets.contains(tileset))
+        if (!tilesetManager.contains(tileset))
         {
             ofLogWarning() << tileset << " not loaded in Layout";
             sequencePlaying = false;
             return;
         }
-        currentTileSet = &tilesets[tileset];
-        ofVec2f coords = globalToWorld(tilesets[tileset].viewTargets[a->poi], &tilesets[tileset]);
+        currentTileSet = tilesetManager[tileset];
+        ofVec2f coords = globalToWorld(tilesetManager[tileset]->viewTargets[a->poi], tilesetManager[tileset]);
 
-        setViewTarget(coords);
+        setViewTarget(coords, 0.5f);
     }
     else if (auto *b = dynamic_cast<ParameterChange *>(ev))
     {
@@ -1644,13 +1067,13 @@ void ofApp::jumpTo(const ofVec2f &worldCoords)
 
 void ofApp::jumpTo(const POI &poi)
 {
-    if (!tilesets.contains(poi.tileset))
+    if (!tilesetManager.contains(poi.tileset))
     {
         ofLogWarning() << poi.tileset << " not loaded in Layout";
         return;
     }
-    currentTileSet = &tilesets[poi.tileset];
-    ofVec2f coords = globalToWorld(tilesets[poi.tileset].viewTargets[poi.poi], &tilesets[poi.tileset]);
+    currentTileSet = tilesetManager[poi.tileset];
+    ofVec2f coords = globalToWorld(tilesetManager[poi.tileset]->viewTargets[poi.poi], tilesetManager[poi.tileset]);
     jumpTo(coords);
 }
 
@@ -1662,75 +1085,6 @@ void ofApp::jumpZoom(float zoomLevel)
     currentZoomSmooth.warmUp = 0.f;
     currentZoomSmooth.jumpTo(zoomLevel);
     focusViewTarget = false;
-}
-
-bool ofApp::saveLayout(const std::string &name)
-{
-    ofxJSON root;
-
-    for (const LayoutPosition &layoutStruct : layout)
-    {
-        Json::Value obj;
-        obj["name"] = layoutStruct.name;
-        obj["relativeTo"] = layoutStruct.relativeTo;
-        switch (layoutStruct.position)
-        {
-        case Position::BELOW:
-            obj["position"] = "below";
-            break;
-        case Position::LEFT:
-            obj["position"] = "left";
-            break;
-        case Position::ABOVE:
-            obj["position"] = "above";
-            break;
-        case Position::RIGHT:
-        default:
-            obj["position"] = "right";
-            break;
-        }
-        switch (layoutStruct.alignment)
-        {
-        case Alignment::CENTER:
-            obj["alignment"] = "center";
-            break;
-        case Alignment::END:
-            obj["alignment"] = "end";
-            break;
-        case Alignment::START:
-        default:
-            obj["alignment"] = "start";
-            break;
-        }
-        root.append(obj);
-    }
-
-    fs::path savePath{scanRoot};
-    savePath /= name;
-    return root.save(savePath, true);
-}
-
-bool ofApp::loadLayout(const std::string &name)
-{
-    ofLogNotice() << "ofApp::loadLayout";
-    ofxJSON root;
-    fs::path loadPath{scanRoot};
-    loadPath /= name;
-    bool result = root.open(loadPath);
-
-    if (result)
-        layout.clear();
-
-    for (Json::ArrayIndex i = 0; i < root.size(); ++i)
-    {
-        std::string name = root[i]["name"].asString();
-        std::string position = root[i]["position"].asString();
-        std::string alignment = root[i]["alignment"].asString();
-        std::string relativeTo = root[i]["relativeTo"].asString();
-
-        addTileSet(name, position, alignment, relativeTo);
-    }
-    return result;
 }
 
 bool ofApp::saveSequence(const std::string &name)
@@ -1782,8 +1136,10 @@ bool ofApp::loadSequence(const std::string &name)
         {
             std::string tileset = root[i]["tileset"].asString();
             int poi = root[i]["poi"].asInt();
+            auto ev = make_shared<POI>(tileset, poi);
 
-            sequence.emplace_back(new POI(tileset, poi));
+            sequence.emplace_back(ev);
+            sequencePoi.emplace_back(ev);
         }
         else if (type == "parameter")
         {

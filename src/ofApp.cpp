@@ -169,6 +169,8 @@ void ofApp::update()
     if (drill && drillZoomAnim.isAnimating() && !drillZoomAnim.getPaused())
         currentZoomSmooth.jumpTo(drillZoomAnim.getCurrentValue());
 
+    bool shouldPreloadZoomIn = false;
+    float prevZoom = currentZoomSmooth.getValue();
     bool zoomUpdated = currentZoomSmooth.process(dt);
 
     if (zoomUpdated)
@@ -185,6 +187,11 @@ void ofApp::update()
         currentZoomLevel = std::clamp(
             static_cast<int>(std::floor(currentZoomSmooth.getValue())),
             maxZoomLevel, minZoomLevel);
+
+        if (prevZoom > currentZoomSmooth.getValue() && std::fmodf(currentZoomSmooth.getValue(), 1.0f) < 0.5f)
+        {
+            preloadZoom(currentZoomLevel - 1);
+        }
 
         if (currentZoomLevel != lastZoomLevel)
         {
@@ -698,7 +705,7 @@ bool ofApp::updateCaches()
         Theta t2 = tilesetManager[key.tileset]->t2;
 
         if (
-            (key.zoom != currentZoom) ||
+            (key.zoom != currentZoom || key.zoom != currentZoom - 1) ||
             (key.theta != t1 && key.theta != t2) ||
             (!isVisible(key, tilesetManager[key.tileset]->offset)))
         {
@@ -712,6 +719,13 @@ bool ofApp::updateCaches()
     // 2. Check which tiles are needed
     for (const auto &[set, tileset] : tilesetManager.tilesets)
     {
+        // 2.1 Skip if tileset is not visible
+        ofVec2f tilesetSize = tileset.zoomWorldSizes.at(currentZoom);
+        ofRectangle tilesetBounds{{0.f, 0.f}, tilesetSize};
+        if (!isVisible(tilesetBounds, tileset.offset))
+            continue;
+
+        // 2.2 Check tiles for current and next theta level
         const auto &v1 = tileset.avaliableTiles.at(currentZoom).at(tileset.t1);
         const auto &v2 = tileset.avaliableTiles.at(currentZoom).at(tileset.t2);
 
@@ -761,7 +775,10 @@ void ofApp::preloadZoom(int level)
     for (auto &[set, tileset] : tilesetManager.tilesets)
     {
         // check if tileset in frame first
-        // ofVec2f tilesetBounds = tileset.zoomWorldSizes[zoom];
+        ofVec2f tilesetSize = tileset.zoomWorldSizes.at(zoom);
+        ofRectangle tilesetBounds{{0.f, 0.f}, tilesetSize};
+        if (!isVisible(tilesetBounds, tileset.offset))
+            continue;
 
         int preloadCount = 0;
 

@@ -96,34 +96,3 @@ struct LayoutPosition
     Alignment alignment = Alignment::START;
     std::string relativeTo = "";
 };
-
-struct SequenceEvent
-{
-    std::string type;
-    virtual std::string toString()
-    {
-        return type;
-    }
-};
-
-struct POI : public SequenceEvent
-{
-    std::string tileset;
-    size_t poi;
-    POI(const std::string &t, size_t i) : tileset(t), poi(i) { type = "poi"; }
-    std::string toString() override
-    {
-        return type + "::" + tileset + "::" + ofToString(poi);
-    }
-};
-
-struct ParameterChange : SequenceEvent
-{
-    std::string parameter;
-    float value;
-    ParameterChange(const std::string &p, float v) : parameter(p), value(v) { type = "parameter"; }
-    std::string toString() override
-    {
-        return type + "::" + parameter + "::" + ofToString(value);
-    }
-};

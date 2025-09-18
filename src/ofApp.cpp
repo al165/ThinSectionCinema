@@ -257,6 +257,20 @@ void ofApp::update()
         screenToWorld({0.f + 6.f, 0.f + 6.f}),
         screenToWorld({static_cast<float>(ofGetWidth() - 12), static_cast<float>(ofGetHeight() - 12)}));
 
+    if (frameReady)
+    {
+        time += dt;
+
+        if (waiting && sequencePlaying)
+        {
+            if (time >= waitEndTime)
+            {
+                waiting = false;
+                nextStep();
+            }
+        }
+    }
+
     frameReady = updateCaches();
 }
 
@@ -384,7 +398,6 @@ void ofApp::draw()
                     << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
 
             frameCount++;
-            time += 1.f / recordingFps;
         }
     }
 
@@ -926,49 +939,58 @@ void ofApp::nextStep()
     }
 
     ofLog() << "Sequence step " + ofToString(sequenceStep);
-    SequenceEvent *ev = sequence[sequenceStep].get();
+    sequence[sequenceStep]->accept(*this);
+}
 
-    if (auto *a = dynamic_cast<POI *>(ev))
+void ofApp::visit(POI &ev)
+{
+    std::string tileset = ev.tileset;
+
+    if (!tilesetManager.contains(tileset))
     {
-        std::string tileset = a->tileset;
-
-        if (!tilesetManager.contains(tileset))
-        {
-            ofLogWarning() << tileset << " not loaded in Layout";
-            sequencePlaying = false;
-            return;
-        }
-        currentTileSet = tilesetManager[tileset];
-        ofVec2f coords = globalToWorld(tilesetManager[tileset]->viewTargets[a->poi], tilesetManager[tileset]);
-
-        setViewTarget(coords, 0.5f);
+        ofLogWarning() << tileset << " not loaded in Layout";
+        sequencePlaying = false;
+        return;
     }
-    else if (auto *b = dynamic_cast<ParameterChange *>(ev))
-    {
-        ofLog() << "set parameter " << b->parameter << " to " << ofToString(b->value);
-        if (b->parameter == "drillSpeed")
-            drillSpeed = b->value;
-        else if (b->parameter == "zoomSpeed")
-            zoomSpeed = b->value;
-        else if (b->parameter == "spinSpeed")
-            spinSpeed = b->value;
-        else if (b->parameter == "drillDepth")
-            drillDepth = b->value;
-        else if (b->parameter == "drillTime")
-            drillTime = b->value;
-        else if (b->parameter == "flyHeight")
-            flyHeight = b->value;
-        else if (b->parameter == "thetaSpeed")
-            thetaSpeed = b->value;
-        else if (b->parameter == "minMovingTime")
-            minMovingTime = b->value;
-        else if (b->parameter == "maxMovingTime")
-            maxMovingTime = b->value;
-        else if (b->parameter == "orientation")
-            targetOrientation = b->value > 0.f;
+    currentTileSet = tilesetManager[tileset];
+    ofVec2f coords = globalToWorld(tilesetManager[tileset]->viewTargets[ev.poi], tilesetManager[tileset]);
 
-        nextStep();
-    }
+    setViewTarget(coords, 0.5f);
+}
+
+void ofApp::visit(ParameterChange &ev)
+{
+    ofLog() << "set parameter " << ev.parameter << " to " << ofToString(ev.value);
+    if (ev.parameter == "drillSpeed")
+        drillSpeed = ev.value;
+    else if (ev.parameter == "zoomSpeed")
+        zoomSpeed = ev.value;
+    else if (ev.parameter == "spinSpeed")
+        spinSpeed = ev.value;
+    else if (ev.parameter == "drillDepth")
+        drillDepth = ev.value;
+    else if (ev.parameter == "drillTime")
+        drillTime = ev.value;
+    else if (ev.parameter == "flyHeight")
+        flyHeight = ev.value;
+    else if (ev.parameter == "thetaSpeed")
+        thetaSpeed = ev.value;
+    else if (ev.parameter == "minMovingTime")
+        minMovingTime = ev.value;
+    else if (ev.parameter == "maxMovingTime")
+        maxMovingTime = ev.value;
+    else if (ev.parameter == "orientation")
+        targetOrientation = ev.value > 0.f;
+
+    nextStep();
+}
+
+void ofApp::visit(Wait &ev)
+{
+    ofLog() << "Wait for " << ev.value << "s";
+
+    waiting = true;
+    waitEndTime = time + ev.value;
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
@@ -1095,19 +1117,7 @@ bool ofApp::saveSequence(const std::string &name)
     for (auto &ev : sequence)
     {
         Json::Value obj;
-        if (auto *a = dynamic_cast<POI *>(ev.get()))
-        {
-            obj["type"] = "poi";
-            obj["tileset"] = a->tileset;
-            obj["poi"] = Json::Int(a->poi);
-        }
-        else if (auto *b = dynamic_cast<ParameterChange *>(ev.get()))
-        {
-            obj["type"] = "parameter";
-            obj["parameter"] = b->parameter;
-            obj["value"] = b->value;
-        }
-
+        ev->save(obj);
         root.append(obj);
     }
 

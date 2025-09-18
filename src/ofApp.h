@@ -11,6 +11,7 @@
 #include "AsyncTextureLoader.hpp"
 #include "TilesetProperties.h"
 #include "TilesetManager.hpp"
+#include "Sequencer.hpp"
 
 #include "ofxCsv.h"
 #include "ofxJSON.h"
@@ -37,7 +38,7 @@ struct View
     // std::string tileset;
 };
 
-class ofApp : public ofBaseApp
+class ofApp : public ofBaseApp, public Visitor
 {
 
 public:
@@ -117,6 +118,8 @@ public:
     ofVec2f viewStartWorld = {0.f, 0.f};
     bool focusViewTarget = false;
     float time;
+    float waitEndTime;
+    bool waiting = false;
     bool drill = false;
     float drillTime = 8.f;
     bool targetOrientation = false;
@@ -153,6 +156,9 @@ public:
     void nextStep();
     void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
     void valueReached(SmoothValueLinear::SmoothValueEvent &ev);
+    void visit(POI &ev) override;
+    void visit(ParameterChange &ev) override;
+    void visit(Wait &ev) override;
 
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);

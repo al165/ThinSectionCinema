@@ -284,6 +284,7 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Parameters"))
     {
+        ImGui::SeparatorText("Values");
         ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##zoomSpeed"))
@@ -334,11 +335,37 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##orientation"))
             sequence.push_back(std::make_unique<ParameterChange>("orientation", (float)targetOrientation));
 
+        ImGui::Dummy({10, 10});
         ImGui::TreePop();
     }
 
     if (ImGui::TreeNode("Sequence"))
     {
+        ImGui::SeparatorText("Load / Save");
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
+        if (ImGui::Button("Load sequence"))
+            loadSequence("sequence.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
+        if (ImGui::Button("Save sequence"))
+            saveSequence("sequence.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::SeparatorText("Add event");
+        static float waitTime = 1.0f;
+        ImGui::SliderFloat("waitTime", &waitTime, 0.f, 60.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##waitTime"))
+            sequence.push_back(std::make_unique<Wait>(waitTime));
+
+        ImGui::SeparatorText("Edit sequence");
+
         static bool focusSequence = true;
         static size_t selected_event = 0;
         if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
@@ -382,28 +409,17 @@ void ofApp::drawGUI()
         }
 
         if (ImGui::Button("Delete event"))
+        {
             sequence.erase(sequence.begin() + selected_event);
+            if (selected_event < sequenceStep)
+                sequenceStep--;
+        }
 
         ImGui::SameLine();
         ImGui::Checkbox("Focus on select", &focusSequence);
 
-        ImGui::Dummy({10, 10});
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Load sequence"))
-            loadSequence("sequence.json");
-        ImGui::PopStyleColor(3);
+        ImGui::SeparatorText("Playback");
 
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
-        if (ImGui::Button("Save sequence"))
-            saveSequence("sequence.json");
-        ImGui::PopStyleColor(3);
-
-        ImGui::Dummy({10, 10});
         ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
@@ -415,6 +431,7 @@ void ofApp::drawGUI()
         if (ImGui::Button("Play from selection"))
             playSequence(selected_event);
 
+        ImGui::Dummy({10, 10});
         ImGui::TreePop();
     }
 
@@ -464,6 +481,7 @@ void ofApp::drawGUI()
             ImGui::EndTable();
         }
 
+        ImGui::Dummy({10, 10});
         ImGui::TreePop();
     }
 

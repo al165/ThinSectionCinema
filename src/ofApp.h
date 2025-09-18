@@ -118,12 +118,13 @@ public:
     ofVec2f viewStartWorld = {0.f, 0.f};
     bool focusViewTarget = false;
     float time;
-    float waitEndTime;
+    float waitEndTime, waitTheta;
     bool waiting = false;
+    bool waitingForTheta = false;
     bool drill = false;
     float drillTime = 8.f;
     bool targetOrientation = false;
-    float drillDepth = 0.f;
+    float drillDepth = 0.5f;
     float flyHeight = 4.f;
     float drillSpeed = 0.4f;
     float spinSpeed = 0.06f;
@@ -158,7 +159,9 @@ public:
     void valueReached(SmoothValueLinear::SmoothValueEvent &ev);
     void visit(POI &ev) override;
     void visit(ParameterChange &ev) override;
-    void visit(Wait &ev) override;
+    void visit(WaitSeconds &ev) override;
+    void visit(WaitTheta &ev) override;
+    void visit(Drill &ev) override;
 
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);
@@ -170,6 +173,7 @@ public:
     void jumpTo(const POI &poi);
     void jumpZoom(float zoomLevel);
 
+    void addSequenceEvent(SequenceEvent *ev, int position = -1);
     bool saveSequence(const std::string &name);
     bool loadSequence(const std::string &name);
 

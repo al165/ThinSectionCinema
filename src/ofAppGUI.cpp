@@ -11,6 +11,8 @@ void ofApp::drawGUI()
     disableMouse = io.WantCaptureMouse;
     disableKeyboard = io.WantCaptureKeyboard;
 
+    static size_t selected_event = 0;
+
     if (ImGui::TreeNode("Layout"))
     {
         ImGui::SeparatorText("Save / Load");
@@ -273,10 +275,7 @@ void ofApp::drawGUI()
         if (selectedTilesetName.size() > 0)
         {
             if (ImGui::Button("Add to sequence"))
-            {
-                POI ev(selectedTilesetName, scan_poi_idx);
-                sequence.emplace_back(new POI(selectedTilesetName, scan_poi_idx));
-            }
+                addSequenceEvent(new POI{selectedTilesetName, scan_poi_idx}, selected_event + 1);
         }
 
         ImGui::TreePop();
@@ -288,52 +287,47 @@ void ofApp::drawGUI()
         ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##zoomSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("zoomSpeed", zoomSpeed));
+            addSequenceEvent(new ParameterChange{"zoomSpeed", zoomSpeed}, selected_event + 1);
 
         ImGui::SliderFloat("drillSpeed", &drillSpeed, 0.f, 1.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("drillSpeed", drillSpeed));
+            addSequenceEvent(new ParameterChange{"drillSpeed", drillSpeed}, selected_event + 1);
 
         ImGui::SliderFloat("drillTime", &drillTime, 1.f, 20.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillTime"))
-            sequence.push_back(std::make_unique<ParameterChange>("drillTime", drillTime));
-
-        ImGui::SliderFloat("drillDepth", &drillDepth, 0.f, 3.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##drillDepth"))
-            sequence.push_back(std::make_unique<ParameterChange>("drillDepth", drillDepth));
+            addSequenceEvent(new ParameterChange{"drillTime", drillTime}, selected_event + 1);
 
         ImGui::SliderFloat("spinSpeed", &spinSpeed, -0.5f, 0.5f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##spinSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("spinSpeed", spinSpeed));
+            addSequenceEvent(new ParameterChange{"spinSpeed", spinSpeed}, selected_event + 1);
 
         ImGui::SliderFloat("flyHeight", &flyHeight, 2.f, 5.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##flyHeight"))
-            sequence.push_back(std::make_unique<ParameterChange>("flyHeight", flyHeight));
+            addSequenceEvent(new ParameterChange{"flyHeight", flyHeight}, selected_event + 1);
 
         ImGui::SliderFloat("thetaSpeed", &thetaSpeed, 0.f, 1.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##thetaSpeed"))
-            sequence.push_back(std::make_unique<ParameterChange>("thetaSpeed", thetaSpeed));
+            addSequenceEvent(new ParameterChange{"thetaSpeed", thetaSpeed}, selected_event + 1);
 
         ImGui::SliderFloat("minMovingTime", &minMovingTime, 1.f, 30.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##minMovingTime"))
-            sequence.push_back(std::make_unique<ParameterChange>("minMovingTime", minMovingTime));
+            addSequenceEvent(new ParameterChange{"minMovingTime", minMovingTime}, selected_event + 1);
 
         ImGui::SliderFloat("maxMovingTime", &maxMovingTime, 1.f, 60.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##maxMovingTime"))
-            sequence.push_back(std::make_unique<ParameterChange>("maxMovingTime", maxMovingTime));
+            addSequenceEvent(new ParameterChange{"maxMovingTime", maxMovingTime}, selected_event + 1);
 
         ImGui::Checkbox("orientation", &targetOrientation);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##orientation"))
-            sequence.push_back(std::make_unique<ParameterChange>("orientation", (float)targetOrientation));
+            addSequenceEvent(new ParameterChange{"orientation", (float)targetOrientation}, selected_event + 1);
 
         ImGui::Dummy({10, 10});
         ImGui::TreePop();
@@ -362,12 +356,22 @@ void ofApp::drawGUI()
         ImGui::SliderFloat("waitTime", &waitTime, 0.f, 60.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##waitTime"))
-            sequence.push_back(std::make_unique<Wait>(waitTime));
+            addSequenceEvent(new WaitSeconds{waitTime}, selected_event + 1);
+
+        static float waitTheta = 0.f;
+        ImGui::SliderFloat("waitTheta", &waitTheta, 0.f, 180.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##waitTheta"))
+            addSequenceEvent(new WaitTheta{waitTheta}, selected_event + 1);
+
+        ImGui::SliderFloat("drillDepth", &drillDepth, -1.f, 4.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##drillDepth"))
+            addSequenceEvent(new Drill{drillDepth}, selected_event + 1);
 
         ImGui::SeparatorText("Edit sequence");
 
         static bool focusSequence = true;
-        static size_t selected_event = 0;
         if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
         {
             ImGui::PushItemFlag(ImGuiItemFlags_AllowDuplicateId, true);

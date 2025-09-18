@@ -246,6 +246,12 @@ void ofApp::update()
     {
         currentView.theta = std::fmodf(currentTheta.getValue() + 180.f, 180.f);
 
+        if (waitingForTheta && currentTheta.getValue() >= waitTheta && currentTheta.getValue() - currentTheta.lastChange < waitTheta)
+        {
+            waitingForTheta = false;
+            nextStep();
+        }
+
         if (currentTheta.getTargetValue() < 0.0f)
         {
             currentTheta.setTarget(currentTheta.getTargetValue() + 180.f);
@@ -1002,23 +1008,38 @@ void ofApp::visit(ParameterChange &ev)
     nextStep();
 }
 
-void ofApp::visit(Wait &ev)
+void ofApp::visit(WaitSeconds &ev)
 {
-    ofLog() << "Wait for " << ev.value << "s";
+    ofLog() << "WaitSeconds for " << ev.value << "s";
 
     waiting = true;
     waitEndTime = time + ev.value;
+}
+
+void ofApp::visit(WaitTheta &ev)
+{
+    ofLog() << "WaitTheta until " << ev.value;
+
+    waitingForTheta = true;
+    waitTheta = ev.value;
+}
+
+void ofApp::visit(Drill &ev)
+{
+    ofLog() << "Drill to " << ev.value;
+
+    drillZoomAnim.setDuration(drillTime);
+    drillZoomAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
+    drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
+    drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), ev.value);
+    drill = true;
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 {
     if (ev.who == &viewTargetAnim)
     {
-        drillZoomAnim.setDuration(drillTime);
-        drillZoomAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
-        drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
-        drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), drillDepth);
-        drill = true;
+        nextStep();
     }
     else if (ev.who == &drillZoomAnim)
     {
@@ -1124,6 +1145,23 @@ void ofApp::jumpZoom(float zoomLevel)
     currentZoomSmooth.warmUp = 0.f;
     currentZoomSmooth.jumpTo(zoomLevel);
     focusViewTarget = false;
+}
+
+void ofApp::addSequenceEvent(SequenceEvent *ev, int position)
+{
+    if (position >= (int)sequence.size())
+    {
+        sequence.emplace_back(ev);
+        return;
+    }
+
+    if (position < 0)
+        position = sequenceStep + 1;
+
+    ofLog() << "Emplace event in position " << position;
+    sequence.emplace(sequence.begin() + position, ev);
+    if (position <= sequenceStep)
+        sequenceStep++;
 }
 
 bool ofApp::saveSequence(const std::string &name)

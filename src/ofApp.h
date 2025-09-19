@@ -149,8 +149,6 @@ public:
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
     ofRectangle getLayoutBounds();
     bool updateCaches();
-    // void addTileSet(const std::string &set, const std::string &position, const std::string &alignment, const std::string &relativeTo);
-    // void loadTileList(const std::string &set);
     void preloadZoom(int level);
     void drawTiles(const TileSet &tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
@@ -174,7 +172,7 @@ public:
     void jumpTo(const POI &poi);
     void jumpZoom(float zoomLevel);
 
-    void addSequenceEvent(SequenceEvent *ev, int position = -1);
+    size_t addSequenceEvent(std::shared_ptr<SequenceEvent> ev, int position = -1);
     bool saveSequence(const std::string &name);
     bool loadSequence(const std::string &name);
 
@@ -183,6 +181,7 @@ public:
     ofVec2f screenSizeWorld;
     ofRectangle layoutBounds;
     float topLayoutWorld;
+    ofPixels screenshot;
 
     void calculateViewMatrix();
 
@@ -193,3 +192,5 @@ public:
     bool disableMouse = false;
     bool disableKeyboard = false;
 };
+
+void pasteInto(ofPixels &dstPixels, const ofPixels &src, int x, int y);

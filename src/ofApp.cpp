@@ -139,7 +139,7 @@ void ofApp::update()
     if (waitForFrames || rendering)
         return;
 
-    float dt = frameReady ? (1.f / recordingFps) : 0.f;
+    float dt = 1.f / recordingFps;
 
     if (centerZoom)
         zoomCenterWorld = screenToWorld(screenCenter);
@@ -151,9 +151,6 @@ void ofApp::update()
         ofVec2f tween = viewTargetWorld * t + viewStartWorld * (1.f - t);
         offsetDelta.set(tween - currentView.offsetWorld);
     }
-
-    if (cycleTheta)
-        currentTheta.setTarget(currentTheta.getTargetValue() + thetaSpeed);
 
     if (drill)
     {
@@ -264,6 +261,9 @@ void ofApp::update()
         }
 
         tilesetManager.updateTheta(currentView.theta);
+
+        if (cycleTheta)
+            currentTheta.setTarget(currentTheta.getTargetValue() + thetaSpeed);
     }
 
     currentView.viewWorld.set(
@@ -425,10 +425,10 @@ void ofApp::draw()
     if (showDebug && !recording)
     {
         ofSetColor(0, 255, 255);
-        ofRectangle bounds = getLayoutBounds();
-        ofPushStyle();
-        ofDrawRectangle(bounds);
-        ofPopStyle();
+        // ofRectangle bounds = getLayoutBounds();
+        // ofPushStyle();
+        // ofDrawRectangle(bounds);
+        // ofPopStyle();
 
         int indexPrevPOI = -1;
         ofVec2f prevPoiPos;
@@ -478,21 +478,38 @@ void ofApp::draw()
 
     if (rendering && frameReady)
     {
-        ofSaveFrame();
+        static int x = 0;
+        static int y = 0;
+
+        // ofRectangle bounds = getLayoutBounds();
+        ofPixels pixels;
+
+        ofGetGLRenderer()->saveFullViewport(pixels);
+
+        ofLog() << " frame " << pixels.getWidth() << "x" << pixels.getHeight() << " at (" << x << ", " << y << ")" << " pixel format: " << pixels.getPixelFormat();
+        pasteInto(screenshot, pixels, x, y);
+
         // move onto next
-        ofRectangle bounds = getLayoutBounds();
-        if (bounds.getBottom() < ofGetHeight())
+        if (layoutBounds.getBottom() < y + ofGetHeight())
         {
             // reached bottom
-            if (bounds.getRight() < ofGetWidth())
+            if (layoutBounds.getRight() < x + ofGetWidth())
             {
                 // reached end
                 rendering = false;
+                ofLog() << "screenshot pixelFormat: " << screenshot.getPixelFormat();
+
+                ofSaveImage(screenshot, "overview.png");
                 ofLog() << "Finished rendering";
+
+                x = 0;
+                y = 0;
             }
             else
             {
                 // jump to top, move right
+                y = 0;
+                x += ofGetWidth();
                 currentView.offsetWorld.y = topLayoutWorld + screenSizeWorld.y / 2.f;
                 currentView.offsetWorld.x += screenSizeWorld.x;
                 calculateViewMatrix();
@@ -502,8 +519,12 @@ void ofApp::draw()
         {
             // move down
             currentView.offsetWorld += ofVec2f(0, screenSizeWorld.y);
+            y += ofGetHeight();
             calculateViewMatrix();
         }
+
+        frameReady = false;
+        ofSleepMillis(100);
 
         return;
     }
@@ -742,19 +763,18 @@ bool ofApp::isVisible(const TileKey &key, ofVec2f offset)
 
 ofRectangle ofApp::getLayoutBounds()
 {
-    ofRectangle bounds;
+    ofLog() << __FUNCTION__ << " currentZoom " << currentZoom;
+    ofRectangle boundsScreen;
     if (tilesetManager.layout.size() == 0)
-        return bounds;
+        return boundsScreen;
 
     std::vector<float> xs;
     std::vector<float> ys;
 
-    for (size_t i = 0; i < tilesetManager.layout.size(); i++)
+    for (const TileSet *tileset : tilesetManager.tilesetList)
     {
-        LayoutPosition pos = tilesetManager.layout[i];
-        TileSet *tileset = &tilesetManager.tilesets[pos.name];
         ofVec2f offset = tileset->offset;
-        ofVec2f size = tileset->zoomWorldSizes[currentZoom];
+        ofVec2f size = tileset->zoomWorldSizes.at(currentZoom);
 
         ofVec2f tl = worldToScreen(offset);
         ofVec2f br = worldToScreen(offset + size);
@@ -780,12 +800,12 @@ ofRectangle ofApp::getLayoutBounds()
     float minY = *ybounds.first;
     float maxY = *ybounds.second;
 
-    bounds.setX(minX);
-    bounds.setY(minY);
-    bounds.setWidth(maxX - minX);
-    bounds.setHeight(maxY - minY);
+    boundsScreen.setX(minX);
+    boundsScreen.setY(minY);
+    boundsScreen.setWidth(maxX - minX);
+    boundsScreen.setHeight(maxY - minY);
 
-    return bounds;
+    return boundsScreen;
 }
 
 bool ofApp::updateCaches()
@@ -1240,27 +1260,33 @@ void ofApp::jumpZoom(float zoomLevel)
     currentZoomSmooth.speed = 2.f;
     currentZoomSmooth.warmUp = 0.f;
     currentZoomSmooth.jumpTo(zoomLevel);
+    currentZoomLevel = std::clamp(
+        static_cast<int>(std::floor(currentZoomSmooth.getValue())),
+        maxZoomLevel,
+        minZoomLevel);
+
     currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     focusViewTarget = false;
 
     calculateViewMatrix();
 }
 
-void ofApp::addSequenceEvent(SequenceEvent *ev, int position)
+size_t ofApp::addSequenceEvent(std::shared_ptr<SequenceEvent> ev, int position)
 {
     if (position >= (int)sequence.size())
     {
-        sequence.emplace_back(ev);
-        return;
+        sequence.emplace_back(std::move(ev));
+        return sequence.size() - 1;
     }
 
     if (position < 0)
         position = sequenceStep + 1;
 
-    ofLog() << "Emplace event in position " << position;
-    sequence.emplace(sequence.begin() + position, ev);
+    sequence.emplace(sequence.begin() + position, std::move(ev));
     if (position <= sequenceStep)
         sequenceStep++;
+
+    return position;
 }
 
 bool ofApp::saveSequence(const std::string &name)
@@ -1303,7 +1329,7 @@ bool ofApp::loadSequence(const std::string &name)
             auto ev = make_shared<POI>(tileset, poi);
 
             sequence.emplace_back(ev);
-            sequencePoi.emplace_back(ev);
+            // sequencePoi.emplace_back(ev);
         }
         else if (type == "parameter")
         {
@@ -1312,29 +1338,84 @@ bool ofApp::loadSequence(const std::string &name)
 
             sequence.emplace_back(new ParameterChange(parameter, value));
         }
+        else if (type == "wait-seconds")
+        {
+            float value = root[i]["value"].asFloat();
+            sequence.emplace_back(std::make_shared<WaitSeconds>(value));
+        }
+        else if (type == "drill")
+        {
+            float value = root[i]["value"].asFloat();
+            sequence.emplace_back(std::make_shared<Drill>(value));
+        }
+        else if (type == "wait-theta")
+        {
+            float value = root[i]["value"].asFloat();
+            sequence.emplace_back(std::make_shared<WaitTheta>(value));
+        }
     }
     return result;
 }
 
 void ofApp::renderScreenShot()
 {
+    // Only seems to work first time??
+
     rendering = true;
     rotationAngle.jumpTo(0);
     currentTheta.jumpTo(0);
     viewTargetAnim.pause();
     spinSmooth.pause();
     drillZoomAnim.pause();
-    calculateViewMatrix();
 
     jumpZoom(5.f);
+    calculateViewMatrix();
 
     layoutBounds = getLayoutBounds();
+
+    ofLog() << "Current zoom: " << currentZoom << ", currentZoomLevel " << currentZoomLevel << ", currentZoomSmooth " << currentZoomSmooth.getValue();
+    ofLog() << "Screenshot size: " << layoutBounds.getWidth() << "x" << layoutBounds.getHeight();
+
+    screenshot.clear();
+    screenshot.allocate((int)layoutBounds.getWidth(), (int)layoutBounds.getHeight(), OF_PIXELS_BGRA);
+    screenshot.setColor(ofColor(0));
+    ofLog() << "Screenshot allocated: " << screenshot.getWidth() << "x" << screenshot.getHeight();
+
     ofVec2f boundsOffsetWorld = screenToWorld(layoutBounds.getTopLeft());
     ofVec2f screenCornerWorld = screenToWorld({0.f, 0.f});
-    ofVec2f screenCenterWorld = screenToWorld({ofGetWidth() / 2, ofGetHeight() / 2});
+    ofVec2f screenCenterWorld = screenToWorld(screenCenter);
 
     screenSizeWorld = (screenCenterWorld - screenCornerWorld) * 2.f;
     topLayoutWorld = boundsOffsetWorld.y;
 
     jumpTo(boundsOffsetWorld + screenCenterWorld - screenCornerWorld);
+}
+
+void pasteInto(ofPixels &dstPixels, const ofPixels &src, int x, int y)
+{
+    int dstW = dstPixels.getWidth();
+    int dstH = dstPixels.getHeight();
+    int srcW = src.getWidth();
+    int srcH = src.getHeight();
+    int numChannels = src.getNumChannels();
+
+    for (int j = 0; j < srcH; j++)
+    {
+        int dstY = y + j;
+        if (dstY < 0 || dstY >= dstH)
+            continue; // clip outside
+
+        for (int i = 0; i < srcW; i++)
+        {
+            int dstX = x + i;
+            if (dstX < 0 || dstX >= dstW)
+                continue;
+
+            for (int c = 0; c < numChannels; c++)
+            {
+                dstPixels[(dstY * dstW + dstX) * numChannels + c] =
+                    src[(j * srcW + i) * numChannels + c];
+            }
+        }
+    }
 }

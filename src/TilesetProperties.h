@@ -3,7 +3,7 @@
 #include "ofMain.h"
 #include <unordered_map>
 
-using Theta = int;
+using Theta = float;
 using Zoom = int;
 
 template <class T>

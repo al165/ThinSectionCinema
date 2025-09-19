@@ -275,7 +275,7 @@ void ofApp::drawGUI()
         if (selectedTilesetName.size() > 0)
         {
             if (ImGui::Button("Add to sequence"))
-                addSequenceEvent(new POI{selectedTilesetName, scan_poi_idx}, selected_event + 1);
+                selected_event = addSequenceEvent(std::make_shared<POI>(selectedTilesetName, scan_poi_idx), selected_event + 1);
         }
 
         ImGui::TreePop();
@@ -287,47 +287,47 @@ void ofApp::drawGUI()
         ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##zoomSpeed"))
-            addSequenceEvent(new ParameterChange{"zoomSpeed", zoomSpeed}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("zoomSpeed", zoomSpeed), selected_event + 1);
 
         ImGui::SliderFloat("drillSpeed", &drillSpeed, 0.f, 1.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillSpeed"))
-            addSequenceEvent(new ParameterChange{"drillSpeed", drillSpeed}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("drillSpeed", drillSpeed), selected_event + 1);
 
         ImGui::SliderFloat("drillTime", &drillTime, 1.f, 20.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillTime"))
-            addSequenceEvent(new ParameterChange{"drillTime", drillTime}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("drillTime", drillTime), selected_event + 1);
 
         ImGui::SliderFloat("spinSpeed", &spinSpeed, -0.5f, 0.5f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##spinSpeed"))
-            addSequenceEvent(new ParameterChange{"spinSpeed", spinSpeed}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("spinSpeed", spinSpeed), selected_event + 1);
 
         ImGui::SliderFloat("flyHeight", &flyHeight, 2.f, 5.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##flyHeight"))
-            addSequenceEvent(new ParameterChange{"flyHeight", flyHeight}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("flyHeight", flyHeight), selected_event + 1);
 
         ImGui::SliderFloat("thetaSpeed", &thetaSpeed, 0.f, 1.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##thetaSpeed"))
-            addSequenceEvent(new ParameterChange{"thetaSpeed", thetaSpeed}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("thetaSpeed", thetaSpeed), selected_event + 1);
 
         ImGui::SliderFloat("minMovingTime", &minMovingTime, 1.f, 30.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##minMovingTime"))
-            addSequenceEvent(new ParameterChange{"minMovingTime", minMovingTime}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("minMovingTime", minMovingTime), selected_event + 1);
 
         ImGui::SliderFloat("maxMovingTime", &maxMovingTime, 1.f, 60.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##maxMovingTime"))
-            addSequenceEvent(new ParameterChange{"maxMovingTime", maxMovingTime}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("maxMovingTime", maxMovingTime), selected_event + 1);
 
         ImGui::Checkbox("orientation", &targetOrientation);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##orientation"))
-            addSequenceEvent(new ParameterChange{"orientation", (float)targetOrientation}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("orientation", (float)targetOrientation), selected_event + 1);
 
         ImGui::Dummy({10, 10});
         ImGui::TreePop();
@@ -356,35 +356,39 @@ void ofApp::drawGUI()
         ImGui::SliderFloat("waitTime", &waitTime, 0.f, 60.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##waitTime"))
-            addSequenceEvent(new WaitSeconds{waitTime}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
 
         static float waitTheta = 0.f;
         ImGui::SliderFloat("waitTheta", &waitTheta, 0.f, 180.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##waitTheta"))
-            addSequenceEvent(new WaitTheta{waitTheta}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<WaitTheta>(waitTheta), selected_event + 1);
 
         ImGui::SliderFloat("drillDepth", &drillDepth, -1.f, 4.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillDepth"))
-            addSequenceEvent(new Drill{drillDepth}, selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
 
         ImGui::SeparatorText("Edit sequence");
 
         static bool focusSequence = true;
         if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
         {
-            ImGui::PushItemFlag(ImGuiItemFlags_AllowDuplicateId, true);
             for (size_t i = 0; i < sequence.size(); i++)
             {
                 SequenceEvent *ev = sequence[i].get();
                 const bool is_selected = (selected_event == i);
-                if ((int)i < sequenceStep)
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
-                else if ((int)i == sequenceStep)
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
 
-                if (ImGui::Selectable(ev->toString().c_str(), is_selected))
+                if ((int)i == sequenceStep)
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                else if (ev->type == "poi")
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 255, 255));
+                else if (ev->type == "parameter")
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 180));
+                else
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+
+                if (ImGui::Selectable((ev->toString() + "##event" + ofToString(i)).c_str(), is_selected))
                 {
                     selected_event = i;
                     auto *a = dynamic_cast<POI *>(ev);
@@ -394,28 +398,29 @@ void ofApp::drawGUI()
                         jumpZoom(1.5);
                     }
                 }
-                if ((int)i <= sequenceStep)
-                    ImGui::PopStyleColor();
+                ImGui::PopStyleColor();
 
                 if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
                 {
-                    size_t n_next = i + (ImGui::GetMouseDragDelta(0).y < 0.f ? -1 : 1);
-                    if (n_next >= 0 && n_next < sequence.size())
+                    float dragY = ImGui::GetMouseDragDelta(0).y;
+                    if (std::abs(dragY) > 10.0f)
                     {
-                        sequence[i].swap(sequence[n_next]);
-                        // sequence[n_next].;
-                        ImGui::ResetMouseDragDelta();
+                        int n_next = static_cast<int>(i) + (dragY < 0.f ? -1 : 1);
+                        if (n_next >= 0 && n_next < (int)sequence.size())
+                        {
+                            std::swap(sequence[i], sequence[n_next]);
+                            ImGui::ResetMouseDragDelta();
+                        }
                     }
                 }
             }
-            ImGui::PopItemFlag();
             ImGui::EndListBox();
         }
 
         if (ImGui::Button("Delete event"))
         {
             sequence.erase(sequence.begin() + selected_event);
-            if (selected_event < sequenceStep)
+            if ((int)selected_event < sequenceStep)
                 sequenceStep--;
         }
 
@@ -485,8 +490,8 @@ void ofApp::drawGUI()
             ImGui::EndTable();
         }
 
-        ofRectangle bounds = getLayoutBounds();
-        ImGui::Text("Layout bounds: %.2f, %.2f, %.2f, %.2f", bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
+        // ofRectangle bounds = getLayoutBounds();
+        // ImGui::Text("Layout bounds: %.2f, %.2f, %.2f, %.2f", bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
 
         ImGui::Dummy({10, 10});
         ImGui::TreePop();

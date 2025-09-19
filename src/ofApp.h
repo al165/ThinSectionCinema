@@ -147,6 +147,7 @@ public:
 
     bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
+    ofRectangle getLayoutBounds();
     bool updateCaches();
     // void addTileSet(const std::string &set, const std::string &position, const std::string &alignment, const std::string &relativeTo);
     // void loadTileList(const std::string &set);
@@ -176,6 +177,12 @@ public:
     void addSequenceEvent(SequenceEvent *ev, int position = -1);
     bool saveSequence(const std::string &name);
     bool loadSequence(const std::string &name);
+
+    void renderScreenShot();
+    bool rendering = false;
+    ofVec2f screenSizeWorld;
+    ofRectangle layoutBounds;
+    float topLayoutWorld;
 
     void calculateViewMatrix();
 

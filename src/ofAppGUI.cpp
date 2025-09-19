@@ -485,6 +485,9 @@ void ofApp::drawGUI()
             ImGui::EndTable();
         }
 
+        ofRectangle bounds = getLayoutBounds();
+        ImGui::Text("Layout bounds: %.2f, %.2f, %.2f, %.2f", bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
+
         ImGui::Dummy({10, 10});
         ImGui::TreePop();
     }

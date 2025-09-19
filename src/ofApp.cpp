@@ -136,7 +136,7 @@ void ofApp::update()
     else if (waitForFrames && numFramesQueued == 0)
         waitForFrames = false;
 
-    if (waitForFrames)
+    if (waitForFrames || rendering)
         return;
 
     float dt = frameReady ? (1.f / recordingFps) : 0.f;
@@ -169,7 +169,7 @@ void ofApp::update()
     if (drill && drillZoomAnim.isAnimating() && !drillZoomAnim.getPaused())
         currentZoomSmooth.jumpTo(drillZoomAnim.getCurrentValue());
 
-    bool shouldPreloadZoomIn = false;
+    // bool shouldPreloadZoomIn = false;
     float prevZoom = currentZoomSmooth.getValue();
     bool zoomUpdated = currentZoomSmooth.process(dt);
 
@@ -312,7 +312,7 @@ void ofApp::draw()
         {margin, margin},
     };
 
-    if (showDebug && !recording)
+    if (showDebug && !recording && !rendering)
     {
         ofPushMatrix();
         ofMultMatrix(viewMatrix);
@@ -425,6 +425,11 @@ void ofApp::draw()
     if (showDebug && !recording)
     {
         ofSetColor(0, 255, 255);
+        ofRectangle bounds = getLayoutBounds();
+        ofPushStyle();
+        ofDrawRectangle(bounds);
+        ofPopStyle();
+
         int indexPrevPOI = -1;
         ofVec2f prevPoiPos;
         for (size_t i = 0; i < sequence.size(); i++)
@@ -446,26 +451,61 @@ void ofApp::draw()
             prevPoiPos.set(pos);
         }
 
-        std::string coordinates = std::format(
-            "Offset: {:.2f}, {:.2f}, ZoomCenter {:.2f}, {:.2f}, rotationAngle {:.2f}",
-            currentView.offsetWorld.x, currentView.offsetWorld.y, zoomCenterWorld.x, zoomCenterWorld.y, rotationAngle.getValue());
+        if (!rendering)
+        {
+            std::string coordinates = std::format(
+                "Offset: {:.2f}, {:.2f}, ZoomCenter {:.2f}, {:.2f}, rotationAngle {:.2f}",
+                currentView.offsetWorld.x, currentView.offsetWorld.y, zoomCenterWorld.x, zoomCenterWorld.y, rotationAngle.getValue());
 
-        ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
+            ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
-        std::string status = std::format(
-            "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {}",
-            currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName);
+            std::string status = std::format(
+                "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {}",
+                currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName);
 
-        ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
+            ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
-        // std::string viewMatrixStr = std::format(
-        //     "┏{:9.3f} {:9.3f} {:9.3f} {:9.3f}┓\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n┗{:9.3f} {:9.3f} {:9.3f} {:9.3f}┛",
-        //     viewMatrix._mat[0][0], viewMatrix._mat[1][0], viewMatrix._mat[2][0], viewMatrix._mat[3][0],
-        //     viewMatrix._mat[0][1], viewMatrix._mat[1][1], viewMatrix._mat[2][1], viewMatrix._mat[3][1],
-        //     viewMatrix._mat[0][2], viewMatrix._mat[1][2], viewMatrix._mat[2][2], viewMatrix._mat[3][2],
-        //     viewMatrix._mat[0][3], viewMatrix._mat[1][3], viewMatrix._mat[2][3], viewMatrix._mat[3][3]);
+            // std::string viewMatrixStr = std::format(
+            //     "┏{:9.3f} {:9.3f} {:9.3f} {:9.3f}┓\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n│{:9.3f} {:9.3f} {:9.3f} {:9.3f}│\n┗{:9.3f} {:9.3f} {:9.3f} {:9.3f}┛",
+            //     viewMatrix._mat[0][0], viewMatrix._mat[1][0], viewMatrix._mat[2][0], viewMatrix._mat[3][0],
+            //     viewMatrix._mat[0][1], viewMatrix._mat[1][1], viewMatrix._mat[2][1], viewMatrix._mat[3][1],
+            //     viewMatrix._mat[0][2], viewMatrix._mat[1][2], viewMatrix._mat[2][2], viewMatrix._mat[3][2],
+            //     viewMatrix._mat[0][3], viewMatrix._mat[1][3], viewMatrix._mat[2][3], viewMatrix._mat[3][3]);
 
-        // ofDrawBitmapStringHighlight(viewMatrixStr, ofGetWidth() - 360, 20);
+            // ofDrawBitmapStringHighlight(viewMatrixStr, ofGetWidth() - 360, 20);
+        }
+    }
+
+    if (rendering && frameReady)
+    {
+        ofSaveFrame();
+        // move onto next
+        ofRectangle bounds = getLayoutBounds();
+        if (bounds.getBottom() < ofGetHeight())
+        {
+            // reached bottom
+            if (bounds.getRight() < ofGetWidth())
+            {
+                // reached end
+                rendering = false;
+                ofLog() << "Finished rendering";
+            }
+            else
+            {
+                // jump to top, move right
+                currentView.offsetWorld.y = topLayoutWorld + screenSizeWorld.y / 2.f;
+                currentView.offsetWorld.x += screenSizeWorld.x;
+                calculateViewMatrix();
+            }
+        }
+        else
+        {
+            // move down
+            currentView.offsetWorld += ofVec2f(0, screenSizeWorld.y);
+            calculateViewMatrix();
+        }
+
+        return;
     }
 
     if (!hideGui)
@@ -574,6 +614,8 @@ void ofApp::keyPressed(int key)
         hideGui = !hideGui;
         disableMouse = false;
     }
+    else if (key == 'e')
+        renderScreenShot();
 }
 
 //--------------------------------------------------------------
@@ -696,6 +738,54 @@ bool ofApp::isVisible(const ofRectangle &worldRect, ofVec2f offset)
 bool ofApp::isVisible(const TileKey &key, ofVec2f offset)
 {
     return isVisible({(float)key.x, (float)key.y, (float)key.width, (float)key.height}, offset);
+}
+
+ofRectangle ofApp::getLayoutBounds()
+{
+    ofRectangle bounds;
+    if (tilesetManager.layout.size() == 0)
+        return bounds;
+
+    std::vector<float> xs;
+    std::vector<float> ys;
+
+    for (size_t i = 0; i < tilesetManager.layout.size(); i++)
+    {
+        LayoutPosition pos = tilesetManager.layout[i];
+        TileSet *tileset = &tilesetManager.tilesets[pos.name];
+        ofVec2f offset = tileset->offset;
+        ofVec2f size = tileset->zoomWorldSizes[currentZoom];
+
+        ofVec2f tl = worldToScreen(offset);
+        ofVec2f br = worldToScreen(offset + size);
+        ofVec2f tr = worldToScreen({offset.x + size.x, offset.y});
+        ofVec2f bl = worldToScreen({offset.x, offset.y + size.y});
+
+        xs.push_back(tl.x);
+        xs.push_back(br.x);
+        xs.push_back(tr.x);
+        xs.push_back(bl.x);
+
+        ys.push_back(tl.y);
+        ys.push_back(br.y);
+        ys.push_back(tr.y);
+        ys.push_back(bl.y);
+    }
+
+    auto xbounds = minmax_element(xs.begin(), xs.end());
+    float minX = *xbounds.first;
+    float maxX = *xbounds.second;
+
+    auto ybounds = minmax_element(ys.begin(), ys.end());
+    float minY = *ybounds.first;
+    float maxY = *ybounds.second;
+
+    bounds.setX(minX);
+    bounds.setY(minY);
+    bounds.setWidth(maxX - minX);
+    bounds.setHeight(maxY - minY);
+
+    return bounds;
 }
 
 bool ofApp::updateCaches()
@@ -954,6 +1044,9 @@ void ofApp::playSequence(int step)
 void ofApp::nextStep()
 {
     sequenceStep++;
+    if (!sequencePlaying)
+        return;
+
     if (sequenceStep >= (int)sequence.size())
     {
         sequencePlaying = false;
@@ -1123,6 +1216,8 @@ void ofApp::jumpTo(const ofVec2f &worldCoords)
     zoomCenterWorld.set(worldCoords);
 
     viewTargetAnim.pause();
+
+    calculateViewMatrix();
 }
 
 void ofApp::jumpTo(const POI &poi)
@@ -1140,11 +1235,15 @@ void ofApp::jumpTo(const POI &poi)
 void ofApp::jumpZoom(float zoomLevel)
 {
     drill = false;
+    sequencePlaying = false;
 
     currentZoomSmooth.speed = 2.f;
     currentZoomSmooth.warmUp = 0.f;
     currentZoomSmooth.jumpTo(zoomLevel);
+    currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     focusViewTarget = false;
+
+    calculateViewMatrix();
 }
 
 void ofApp::addSequenceEvent(SequenceEvent *ev, int position)
@@ -1215,4 +1314,27 @@ bool ofApp::loadSequence(const std::string &name)
         }
     }
     return result;
+}
+
+void ofApp::renderScreenShot()
+{
+    rendering = true;
+    rotationAngle.jumpTo(0);
+    currentTheta.jumpTo(0);
+    viewTargetAnim.pause();
+    spinSmooth.pause();
+    drillZoomAnim.pause();
+    calculateViewMatrix();
+
+    jumpZoom(5.f);
+
+    layoutBounds = getLayoutBounds();
+    ofVec2f boundsOffsetWorld = screenToWorld(layoutBounds.getTopLeft());
+    ofVec2f screenCornerWorld = screenToWorld({0.f, 0.f});
+    ofVec2f screenCenterWorld = screenToWorld({ofGetWidth() / 2, ofGetHeight() / 2});
+
+    screenSizeWorld = (screenCenterWorld - screenCornerWorld) * 2.f;
+    topLayoutWorld = boundsOffsetWorld.y;
+
+    jumpTo(boundsOffsetWorld + screenCenterWorld - screenCornerWorld);
 }

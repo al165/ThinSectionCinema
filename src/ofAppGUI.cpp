@@ -236,6 +236,10 @@ void ofApp::drawGUI()
         static size_t scan_poi_idx = 0;
         static std::string selectedTilesetName = "";
 
+        static bool focusOnSelect = true;
+        static bool zoomOnSelect = true;
+
+        ImGui::SeparatorText("Scan");
         if (ImGui::BeginListBox("##expore-list-box", ImVec2(-FLT_MIN, 5 * ImGui::GetTextLineHeightWithSpacing())))
         {
             for (size_t n = 0; n < tilesetManager.tilesetList.size(); n++)
@@ -251,25 +255,47 @@ void ofApp::drawGUI()
             ImGui::EndListBox();
         }
 
-        if (ImGui::BeginTable("##table-poi", 4))
+        ImGui::Checkbox("Focus on select", &focusOnSelect);
+        if (focusOnSelect)
         {
-            if (tilesetManager.tilesetList.size() > 0 && selectedTilesetName.size() > 0)
-            {
-                for (size_t n = 0; n < tilesetManager.tilesets[selectedTilesetName].viewTargets.size(); n++)
-                {
-                    const bool is_selected = (scan_poi_idx == n);
-                    ImGui::TableNextColumn();
-                    if (ImGui::Selectable(ofToString(n).c_str(), is_selected))
-                    {
-                        scan_poi_idx = n;
+            ImGui::SameLine();
+            ImGui::Checkbox("Zoom", &zoomOnSelect);
+        }
 
-                        ofVec2f coords = globalToWorld(tilesetManager.tilesets[selectedTilesetName].viewTargets[n], &tilesetManager.tilesets[selectedTilesetName]);
+        if (tilesetManager.tilesetList.size() > 0 && selectedTilesetName.size() > 0)
+        {
+            ImGui::SeparatorText("POI");
+            ImGuiStyle &style = ImGui::GetStyle();
+            ImVec2 button_sz(40, 40);
+            size_t poiCount = tilesetManager.tilesets[selectedTilesetName].viewTargets.size();
+            float window_visible_x2 = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+            for (size_t n = 0; n < poiCount; n++)
+            {
+                const bool is_selected = (scan_poi_idx == n);
+                if (is_selected)
+                    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0, 0.6f, 0.6f));
+
+                if (ImGui::Button(ofToString(n).c_str()))
+                {
+                    scan_poi_idx = n;
+
+                    ofVec2f coords = globalToWorld(tilesetManager.tilesets[selectedTilesetName].viewTargets[n], &tilesetManager.tilesets[selectedTilesetName]);
+                    if (focusOnSelect)
+                    {
                         jumpTo(coords);
-                        jumpZoom(1.5);
+                        if (zoomOnSelect)
+                            jumpZoom(2);
                     }
                 }
+
+                if (is_selected)
+                    ImGui::PopStyleColor();
+
+                float next_item_x2 = ImGui::GetItemRectMax().x + style.ItemSpacing.x + ImGui::GetItemRectSize().x;
+
+                if (n + 1 < poiCount && next_item_x2 < window_visible_x2)
+                    ImGui::SameLine();
             }
-            ImGui::EndTable();
         }
 
         if (selectedTilesetName.size() > 0)
@@ -278,6 +304,7 @@ void ofApp::drawGUI()
                 selected_event = addSequenceEvent(std::make_shared<POI>(selectedTilesetName, scan_poi_idx), selected_event + 1);
         }
 
+        ImGui::Dummy({10, 10});
         ImGui::TreePop();
     }
 
@@ -372,6 +399,8 @@ void ofApp::drawGUI()
         ImGui::SeparatorText("Edit sequence");
 
         static bool focusSequence = true;
+        static bool focusZoom = true;
+
         if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
         {
             for (size_t i = 0; i < sequence.size(); i++)
@@ -395,10 +424,39 @@ void ofApp::drawGUI()
                     if (focusSequence && a)
                     {
                         jumpTo(*a);
-                        jumpZoom(1.5);
+
+                        if (focusZoom)
+                            jumpZoom(2.f);
                     }
                 }
                 ImGui::PopStyleColor();
+
+                if (ImGui::BeginPopupContextItem()) // <-- use last item id as popup id
+                {
+                    selected_event = i;
+                    static float newValue = ev->value;
+
+                    if (ev->type != "poi")
+                    {
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        ImGui::DragFloat("##Value", &newValue, 0.1f);
+                    }
+
+                    if (ImGui::Button("Delete"))
+                        sequence.erase(sequence.begin() + selected_event);
+
+                    if (ev->type != "poi")
+                    {
+                        ImGui::SameLine();
+                        if (ImGui::Button("Update"))
+                        {
+                            ev->value = newValue;
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+
+                    ImGui::EndPopup();
+                }
 
                 if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
                 {
@@ -417,15 +475,12 @@ void ofApp::drawGUI()
             ImGui::EndListBox();
         }
 
-        if (ImGui::Button("Delete event"))
-        {
-            sequence.erase(sequence.begin() + selected_event);
-            if ((int)selected_event < sequenceStep)
-                sequenceStep--;
-        }
-
-        ImGui::SameLine();
         ImGui::Checkbox("Focus on select", &focusSequence);
+        if (focusSequence)
+        {
+            ImGui::SameLine();
+            ImGui::Checkbox("Zoom", &focusZoom);
+        }
 
         ImGui::SeparatorText("Playback");
 

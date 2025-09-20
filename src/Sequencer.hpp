@@ -19,10 +19,11 @@ public:
 struct SequenceEvent
 {
     std::string type;
+    float value;
 
     virtual std::string toString()
     {
-        return type;
+        return type + "::" + ofToString(value);
     }
 
     virtual void accept(Visitor &v) = 0;
@@ -37,6 +38,7 @@ struct POI : public SequenceEvent
     POI(const std::string &t, size_t i) : tileset(t), poi(i)
     {
         type = "poi";
+        value = static_cast<float>(i);
     }
 
     std::string toString() override
@@ -60,11 +62,11 @@ struct POI : public SequenceEvent
 struct ParameterChange : SequenceEvent
 {
     std::string parameter;
-    float value;
 
-    ParameterChange(const std::string &p, float v) : parameter(p), value(v)
+    ParameterChange(const std::string &p, float v) : parameter(p)
     {
         type = "parameter";
+        value = v;
     }
 
     std::string toString() override
@@ -87,15 +89,10 @@ struct ParameterChange : SequenceEvent
 
 struct WaitSeconds : SequenceEvent
 {
-    float value;
-    WaitSeconds(float v) : value(v)
+    WaitSeconds(float v)
     {
         type = "wait-seconds";
-    }
-
-    std::string toString() override
-    {
-        return type + "::" + ofToString(value);
+        value = v;
     }
 
     void accept(Visitor &v) override
@@ -112,15 +109,10 @@ struct WaitSeconds : SequenceEvent
 
 struct WaitTheta : SequenceEvent
 {
-    float value;
-    WaitTheta(float v) : value(v)
+    WaitTheta(float v)
     {
         type = "wait-theta";
-    }
-
-    std::string toString() override
-    {
-        return type + "::" + ofToString(value);
+        value = v;
     }
 
     void accept(Visitor &v) override
@@ -137,16 +129,11 @@ struct WaitTheta : SequenceEvent
 
 struct Drill : SequenceEvent
 {
-    float value;
 
-    Drill(float v) : value(v)
+    Drill(float v)
     {
         type = "drill";
-    }
-
-    std::string toString() override
-    {
-        return type + "::" + ofToString(value);
+        value = v;
     }
 
     void accept(Visitor &v) override

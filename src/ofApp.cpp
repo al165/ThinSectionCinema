@@ -112,6 +112,7 @@ void ofApp::setup()
 
     loadSequence("sequence.json");
     currentView.offsetWorld.set(centerWorld);
+    cameraTargetWorld.set(centerWorld);
     calculateViewMatrix();
 }
 
@@ -149,7 +150,7 @@ void ofApp::update()
     {
         float t = viewTargetAnim.val();
         ofVec2f tween = viewTargetWorld * t + viewStartWorld * (1.f - t);
-        offsetDelta.set(tween - currentView.offsetWorld);
+        offsetDelta.set(tween - cameraTargetWorld);
     }
 
     if (drill)
@@ -200,8 +201,12 @@ void ofApp::update()
             viewTargetWorld *= multiplier;
             viewStartWorld *= multiplier;
             currentView.offsetWorld *= multiplier;
+            cameraTargetWorld *= multiplier;
             offsetDelta *= multiplier;
+            vel *= multiplier;
             tilesetManager.updateScale(multiplier);
+
+            ofLog() << "multiplier: " << multiplier;
 
             lastZoomLevel = currentZoomLevel;
             calculateViewMatrix();
@@ -210,7 +215,20 @@ void ofApp::update()
         currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     }
 
-    currentView.offsetWorld += offsetDelta;
+    if (!sequencePlaying)
+    {
+        currentView.offsetWorld += offsetDelta;
+    }
+    else
+    {
+        // Apply dampening
+        cameraTargetWorld += offsetDelta;
+        ofVec2f force = k * (cameraTargetWorld - currentView.offsetWorld) - d * vel;
+        ofVec2f acc = force; // mass = 1 for simplicity
+
+        vel += acc * dt;
+        currentView.offsetWorld += vel * dt;
+    }
     offsetDelta.set(0.f, 0.f);
 
     if (!drill && sequencePlaying)
@@ -218,8 +236,11 @@ void ofApp::update()
         spinSmooth.update(dt);
         spinSmooth.getCurrentValue(); // Needed for getCurrentSpeed to work?...
         if (targetOrientation)
-            rotationAngle.setTarget(rotationAngle.getTargetValue() * (1.f - spinSmooth.getCurrentValue()));
-        else
+        {
+            float orientationAngle = ofMap(spinSmooth.getCurrentValue(), 0.f, 1.f, orientationStartAngle, orientationEndAngle);
+            rotationAngle.setTarget(orientationAngle);
+        }
+        else if (!waiting)
             rotationAngle.setTarget(rotationAngle.getTargetValue() + spinSmooth.getCurrentSpeed() * spinSpeed);
     }
 
@@ -246,6 +267,7 @@ void ofApp::update()
         if (waitingForTheta && currentTheta.getValue() >= waitTheta && currentTheta.getValue() - currentTheta.lastChange < waitTheta)
         {
             waitingForTheta = false;
+            doneWaiting = true;
             nextStep();
         }
 
@@ -279,6 +301,7 @@ void ofApp::update()
             if (time >= waitEndTime)
             {
                 waiting = false;
+                doneWaiting = true;
                 nextStep();
             }
         }
@@ -328,6 +351,10 @@ void ofApp::draw()
 
         ofSetColor(255, 255, 0);
         ofDrawCircle(zoomCenterWorld, 10 / currentView.scale);
+
+        ofFill();
+        ofDrawCircle(cameraTargetWorld, 3 / currentView.scale);
+        ofNoFill();
 
         ofSetColor(0, 255, 0);
         ofSetLineWidth(1.f);
@@ -763,7 +790,7 @@ bool ofApp::isVisible(const TileKey &key, ofVec2f offset)
 
 ofRectangle ofApp::getLayoutBounds()
 {
-    ofLog() << __FUNCTION__ << " currentZoom " << currentZoom;
+    // ofLog() << __FUNCTION__ << " currentZoom " << currentZoom;
     ofRectangle boundsScreen;
     if (tilesetManager.layout.size() == 0)
         return boundsScreen;
@@ -1018,11 +1045,13 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     if (currentTileSet == nullptr)
         return;
 
+    ofLog() << "setViewTarget delayS " << delayS;
+
     viewTargetAnim.pause();
     viewTargetAnim.reset(0.f);
 
     viewTargetWorld.set(worldCoords);
-    viewStartWorld.set(currentView.offsetWorld);
+    viewStartWorld.set(cameraTargetWorld);
 
     // set duration based on distance to target
     float dist = worldToGlobal(viewStartWorld, currentTileSet).distance(worldToGlobal(viewTargetWorld, currentTileSet));
@@ -1030,11 +1059,13 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     dist /= sqrtf(2);
     float movementTime = max(minMovingTime, maxMovingTime * dist);
     float spinWaitTime = 1.f;
-    float spinTime = (movementTime - spinWaitTime) * 0.75f;
+    float spinTime = (movementTime - spinWaitTime) * 0.85f;
 
     viewTargetAnim.setDuration(movementTime);
     viewTargetAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
     viewTargetAnim.setCurve(AnimCurve::EASE_IN_EASE_OUT);
+    // viewTargetAnim.setCurve(AnimCurve::CUBIC_BEZIER_PARAM);
+    // viewTargetAnim.setCubicBezierParams(0.1, 0.f, 0.1, 1.0);
     viewTargetAnim.animateToAfterDelay(1.f, delayS);
 
     spinSmooth.pause();
@@ -1042,7 +1073,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
 
     spinSmooth.setDuration(spinTime);
     spinSmooth.setRepeatType(AnimRepeat::PLAY_ONCE);
-    spinSmooth.setCurve(AnimCurve::EASE_IN_EASE_OUT);
+    spinSmooth.setCurve(AnimCurve::EASE_IN);
     spinSmooth.animateToAfterDelay(1.f, spinWaitTime);
 
     drillZoomAnim.pause();
@@ -1057,7 +1088,9 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
 void ofApp::playSequence(int step)
 {
     sequencePlaying = true;
+    vel.set({0, 0});
     sequenceStep = step - 1;
+    cameraTargetWorld = currentView.offsetWorld;
     nextStep();
 }
 
@@ -1076,6 +1109,8 @@ void ofApp::nextStep()
 
     ofLog() << "Sequence step " + ofToString(sequenceStep);
     sequence[sequenceStep]->accept(*this);
+
+    doneWaiting = false;
 }
 
 void ofApp::visit(POI &ev)
@@ -1091,7 +1126,7 @@ void ofApp::visit(POI &ev)
     currentTileSet = tilesetManager[tileset];
     ofVec2f coords = globalToWorld(tilesetManager[tileset]->viewTargets[ev.poi], tilesetManager[tileset]);
 
-    setViewTarget(coords, 0.5f);
+    setViewTarget(coords, doneWaiting ? 0.f : 0.5f);
 }
 
 void ofApp::visit(ParameterChange &ev)
@@ -1116,8 +1151,11 @@ void ofApp::visit(ParameterChange &ev)
     else if (ev.parameter == "maxMovingTime")
         maxMovingTime = ev.value;
     else if (ev.parameter == "orientation")
+    {
         targetOrientation = ev.value > 0.f;
-
+        orientationStartAngle = rotationAngle.getValue();
+        orientationEndAngle = orientationStartAngle < 180.f ? 0.f : 360.f;
+    }
     nextStep();
 }
 
@@ -1126,6 +1164,7 @@ void ofApp::visit(WaitSeconds &ev)
     ofLog() << "WaitSeconds for " << ev.value << "s";
 
     waiting = true;
+    doneWaiting = false;
     waitEndTime = time + ev.value;
 }
 
@@ -1134,6 +1173,7 @@ void ofApp::visit(WaitTheta &ev)
     ofLog() << "WaitTheta until " << ev.value;
 
     waitingForTheta = true;
+    doneWaiting = false;
     waitTheta = ev.value;
 }
 

@@ -114,16 +114,23 @@ public:
 
     float minMovingTime, maxMovingTime;
     ofxAnimatableFloat viewTargetAnim;
+    ofVec2f cameraTargetWorld;
+    float k = 3.f;
+    float d = 0.8;
+    ofVec2f vel;
     ofVec2f viewTargetWorld = {0.f, 0.f};
     ofVec2f viewStartWorld = {0.f, 0.f};
     bool focusViewTarget = false;
     float time;
     float waitEndTime, waitTheta;
     bool waiting = false;
+    bool doneWaiting = false;
     bool waitingForTheta = false;
     bool drill = false;
     float drillTime = 8.f;
     bool targetOrientation = false;
+    float orientationStartAngle = 0.f;
+    float orientationEndAngle = 0.f;
     float drillDepth = 0.5f;
     float flyHeight = 4.f;
     float drillSpeed = 0.4f;

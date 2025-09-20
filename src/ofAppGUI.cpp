@@ -310,6 +310,10 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Parameters"))
     {
+        ImGui::SeparatorText("Camera dampening");
+        ImGui::SliderFloat("k", &k, 0.f, 10.f);
+        ImGui::SliderFloat("d", &d, 0.5f, 1.5f);
+
         ImGui::SeparatorText("Values");
         ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
         ImGui::SameLine();
@@ -405,7 +409,7 @@ void ofApp::drawGUI()
         {
             for (size_t i = 0; i < sequence.size(); i++)
             {
-                SequenceEvent *ev = sequence[i].get();
+                auto ev = sequence[i];
                 const bool is_selected = (selected_event == i);
 
                 if ((int)i == sequenceStep)
@@ -420,18 +424,35 @@ void ofApp::drawGUI()
                 if (ImGui::Selectable((ev->toString() + "##event" + ofToString(i)).c_str(), is_selected))
                 {
                     selected_event = i;
-                    auto *a = dynamic_cast<POI *>(ev);
-                    if (focusSequence && a)
+                    if (focusSequence)
                     {
-                        jumpTo(*a);
+                        if (auto *poi = dynamic_cast<POI *>(ev.get()))
+                        {
+                            jumpTo(*poi);
 
-                        if (focusZoom)
-                            jumpZoom(2.f);
+                            if (focusZoom)
+                                jumpZoom(2.f);
+                        }
+                        else if (auto *drill = dynamic_cast<Drill *>(ev.get()))
+                        {
+                            size_t lastPOI = i - 1;
+                            while (lastPOI >= 0)
+                            {
+                                auto ev2 = sequence[lastPOI];
+                                if (auto *poi = dynamic_cast<POI *>(ev2.get()))
+                                {
+                                    jumpTo(*poi);
+                                    jumpZoom(drill->value);
+                                    break;
+                                }
+                                lastPOI--;
+                            }
+                        }
                     }
                 }
                 ImGui::PopStyleColor();
 
-                if (ImGui::BeginPopupContextItem()) // <-- use last item id as popup id
+                if (ImGui::BeginPopupContextItem())
                 {
                     selected_event = i;
                     static float newValue = ev->value;

@@ -486,9 +486,11 @@ void ofApp::draw()
 
             ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
+            ofVec2f mouseGlobal = worldToGlobal(screenToWorld({mouseX, mouseY}), currentTileSet);
+
             std::string status = std::format(
-                "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {}",
-                currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName);
+                "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {} Global mouse {:6},{:6}",
+                currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName, mouseGlobal.x, mouseGlobal.y);
 
             ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
@@ -568,60 +570,54 @@ void ofApp::exit()
 }
 
 //--------------------------------------------------------------
-void ofApp::keyPressed(int key)
+void ofApp::keyPressed(ofKeyEventArgs &ev)
 {
     if (disableKeyboard)
         return;
 
-    if (key == OF_KEY_LEFT)
+    if (ev.key == OF_KEY_LEFT)
     {
         float nextTheta = currentTheta.getTargetValue() - 0.3f;
         if (!recording || frameReady)
             currentTheta.setTarget(nextTheta);
     }
-    else if (key == OF_KEY_RIGHT)
+    else if (ev.key == OF_KEY_RIGHT)
     {
         float nextTheta = currentTheta.getTargetValue() + 0.3f;
         if (!recording || frameReady)
             currentTheta.setTarget(nextTheta);
     }
-    else if (key == OF_KEY_UP)
+    else if (ev.key == OF_KEY_UP)
     {
         float nextAngle = rotationAngle.getTargetValue() + 1.f;
         if (!recording || frameReady)
             rotationAngle.setTarget(nextAngle);
     }
-    else if (key == OF_KEY_DOWN)
+    else if (ev.key == OF_KEY_DOWN)
     {
         float nextAngle = rotationAngle.getTargetValue() - 1.f;
         if (!recording || frameReady)
             rotationAngle.setTarget(nextAngle);
     }
-    else if (key == 'd')
+    else if (ev.key == 'd')
         showDebug = !showDebug;
-    else if (key == 'c')
+    else if (ev.key == 'c')
         drawCached = !drawCached;
-    else if (key == 't')
+    else if (ev.key == 't')
         cycleTheta = !cycleTheta;
-    else if (key == ' ')
+    else if (ev.key == ' ')
         nextStep();
-    else if (key == 's')
+    else if (ev.key == 's' && ev.hasModifier(OF_KEY_CONTROL))
     {
-        // Skip
-        viewTargetAnim.pause();
-        drillZoomAnim.pause();
-        currentView.offsetWorld = viewTargetWorld;
-
-        rotationAngle.skip();
-        currentZoomSmooth.skip();
-        currentTheta.skip();
-        drill = false;
+        ofLog() << "SAVING";
+        tilesetManager.saveLayout("layout.json");
+        saveSequence("sequence.json");
     }
-    else if (key == 'p')
+    else if (ev.key == 'p')
     {
         playSequence();
     }
-    else if (key == 'r')
+    else if (ev.key == 'r')
     {
         if (!recording)
         {
@@ -657,12 +653,12 @@ void ofApp::keyPressed(int key)
         }
         recording = !recording;
     }
-    else if (key == 'g')
+    else if (ev.key == 'g')
     {
         hideGui = !hideGui;
         disableMouse = false;
     }
-    else if (key == 'e')
+    else if (ev.key == 'e')
         renderScreenShot();
 }
 
@@ -720,7 +716,7 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
     zoomCenterWorld.set(screenToWorld({(float)x, (float)y}));
     currentZoomSmooth.speed = 2.f;
     currentZoomSmooth.warmUp = 0.f;
-    currentZoomSmooth.setTarget(currentZoomSmooth.getTargetValue() - scrollY * 0.015f);
+    currentZoomSmooth.setTarget(currentZoomSmooth.getTargetValue() - scrollY * 0.055f);
     focusViewTarget = false;
     viewTargetAnim.pause();
     drillZoomAnim.pause();
@@ -1154,7 +1150,9 @@ void ofApp::visit(ParameterChange &ev)
     {
         targetOrientation = ev.value > 0.f;
         orientationStartAngle = rotationAngle.getValue();
-        orientationEndAngle = orientationStartAngle < 180.f ? 0.f : 360.f;
+
+        // orientationEndAngle = orientationStartAngle < 180.f ? 0.f : 360.f;
+        orientationEndAngle = 0.f;
     }
     nextStep();
 }
@@ -1186,6 +1184,20 @@ void ofApp::visit(Drill &ev)
     drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
     drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), ev.value);
     drill = true;
+}
+
+void ofApp::visit(Jump &ev)
+{
+    ofLog() << "jump " << ev.state << " to " << ev.value;
+
+    if (ev.state == "theta")
+        currentTheta.jumpTo(ev.value);
+    else if (ev.state == "rotation")
+        rotationAngle.jumpTo(ev.value);
+    else if (ev.state == "zoom")
+        currentZoomSmooth.jumpTo(ev.value);
+
+    nextStep();
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
@@ -1392,6 +1404,13 @@ bool ofApp::loadSequence(const std::string &name)
         {
             float value = root[i]["value"].asFloat();
             sequence.emplace_back(std::make_shared<WaitTheta>(value));
+        }
+        else if (type == "jump")
+        {
+            std::string state = root[i]["state"].asString();
+            float value = root[i]["value"].asFloat();
+
+            sequence.emplace_back(std::make_shared<Jump>(state, value));
         }
     }
     return result;

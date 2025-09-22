@@ -5,6 +5,7 @@ struct ParameterChange;
 struct WaitSeconds;
 struct WaitTheta;
 struct Drill;
+struct Jump;
 
 class Visitor
 {
@@ -14,6 +15,7 @@ public:
     virtual void visit(WaitSeconds &ev) = 0;
     virtual void visit(WaitTheta &ev) = 0;
     virtual void visit(Drill &ev) = 0;
+    virtual void visit(Jump &ev) = 0;
 };
 
 struct SequenceEvent
@@ -144,6 +146,35 @@ struct Drill : SequenceEvent
     void save(Json::Value &obj)
     {
         obj["type"] = type;
+        obj["value"] = value;
+    }
+};
+
+struct Jump : SequenceEvent
+{
+    std::string state;
+
+    Jump(const std::string &s, float v)
+    {
+        type = "jump";
+        state = s;
+        value = v;
+    }
+
+    void accept(Visitor &v) override
+    {
+        v.visit(*this);
+    }
+
+    std::string toString() override
+    {
+        return type + "::" + state + "::" + ofToString(value);
+    }
+
+    void save(Json::Value &obj)
+    {
+        obj["type"] = type;
+        obj["state"] = state;
         obj["value"] = value;
     }
 };

@@ -345,12 +345,12 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##thetaSpeed"))
             selected_event = addSequenceEvent(std::make_shared<ParameterChange>("thetaSpeed", thetaSpeed), selected_event + 1);
 
-        ImGui::SliderFloat("minMovingTime", &minMovingTime, 1.f, 30.f);
+        ImGui::SliderFloat("minMoving", &minMovingTime, 1.f, 30.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##minMovingTime"))
             selected_event = addSequenceEvent(std::make_shared<ParameterChange>("minMovingTime", minMovingTime), selected_event + 1);
 
-        ImGui::SliderFloat("maxMovingTime", &maxMovingTime, 1.f, 60.f);
+        ImGui::SliderFloat("maxMoving", &maxMovingTime, 1.f, 60.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##maxMovingTime"))
             selected_event = addSequenceEvent(std::make_shared<ParameterChange>("maxMovingTime", maxMovingTime), selected_event + 1);
@@ -381,6 +381,25 @@ void ofApp::drawGUI()
         if (ImGui::Button("Save sequence"))
             saveSequence("sequence.json");
         ImGui::PopStyleColor(3);
+
+        ImGui::SeparatorText("Jump state");
+        static float jumpStateTheta = 0.f;
+        ImGui::SliderFloat("theta", &jumpStateTheta, 0.f, 180.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##jumpTheta"))
+            selected_event = addSequenceEvent(std::make_shared<Jump>("theta", jumpStateTheta), selected_event + 1);
+
+        static float jumpStateRotation = 0.f;
+        ImGui::SliderFloat("rotation", &jumpStateRotation, 0.f, 360.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##jumpRotation"))
+            selected_event = addSequenceEvent(std::make_shared<Jump>("rotation", jumpStateRotation), selected_event + 1);
+
+        static float jumpStateZoom = 2.f;
+        ImGui::SliderFloat("zoom", &jumpStateZoom, 0.f, 5.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##jumpZoom"))
+            selected_event = addSequenceEvent(std::make_shared<Jump>("zoom", jumpStateZoom), selected_event + 1);
 
         ImGui::SeparatorText("Add event");
         static float waitTime = 1.0f;
@@ -482,15 +501,15 @@ void ofApp::drawGUI()
                 if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
                 {
                     float dragY = ImGui::GetMouseDragDelta(0).y;
-                    if (std::abs(dragY) > 10.0f)
+                    // if (std::abs(dragY) > 2.0f)
+                    // {
+                    int n_next = static_cast<int>(i) + (dragY < 0.f ? -1 : 1);
+                    if (n_next >= 0 && n_next < (int)sequence.size())
                     {
-                        int n_next = static_cast<int>(i) + (dragY < 0.f ? -1 : 1);
-                        if (n_next >= 0 && n_next < (int)sequence.size())
-                        {
-                            std::swap(sequence[i], sequence[n_next]);
-                            ImGui::ResetMouseDragDelta();
-                        }
+                        std::swap(sequence[i], sequence[n_next]);
+                        ImGui::ResetMouseDragDelta();
                     }
+                    // }
                 }
             }
             ImGui::EndListBox();

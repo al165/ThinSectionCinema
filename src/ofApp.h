@@ -47,7 +47,7 @@ public:
     void draw();
     void exit();
 
-    void keyPressed(int key);
+    void keyPressed(ofKeyEventArgs &key);
     void mouseMoved(int x, int y);
     void mouseDragged(int x, int y, int button);
     void mousePressed(int x, int y, int button);
@@ -97,7 +97,7 @@ public:
     const float minZoom = 8.f;
     const int maxZoomLevel = 1;
     const int minZoomLevel = 5;
-    SmoothValueLinear currentZoomSmooth = {4.f, 5.3f, 0.f, 8.f};
+    SmoothValueLinear currentZoomSmooth = {4.f, 5.3f, -10.f, 8.f};
     ofxAnimatableFloat drillZoomAnim;
     int currentZoomLevel = 5;
     Zoom currentZoom;
@@ -168,6 +168,7 @@ public:
     void visit(WaitSeconds &ev) override;
     void visit(WaitTheta &ev) override;
     void visit(Drill &ev) override;
+    void visit(Jump &ev) override;
 
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);

@@ -17,7 +17,7 @@ Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file 
     - [ofxAnimatable](https://github.com/armadillu/ofxAnimatable)
     - [ofxCsv](https://github.com/paulvollmer/ofxCsv)
     - [ofxJson](https://github.com/jeffcrouse/ofxJSON)
-    - [ofxImGui](https://github.com/jvcleave/ofxImGui)
+    - [ofxImGui](https://github.com/jvcleave/ofxImGui) (`develop` branch!)
 4. in this repo run `make -j8` to build
 5. setup a tile scan folder of images and the `config.toml`
 6. `./bin/thinsections` to run.

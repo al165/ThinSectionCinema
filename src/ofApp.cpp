@@ -80,10 +80,6 @@ void ofApp::setup()
     screenCenter = screenRectangle.getBottomRight() / 2.f;
     calculateViewMatrix();
 
-    std::ofstream outfile;
-    outfile.open("tween.csv", std::ofstream::out | std::ofstream::trunc);
-    outfile << "frameCount,t,currentViewX,currentViewY,deltaX,deltaY" << std::endl;
-
     ofResetElapsedTimeCounter();
 
     gui.setup(nullptr, true);
@@ -385,8 +381,6 @@ void ofApp::draw()
         {
             ffmpegRecorder.addSingleFrame(framePixels);
 
-            // ofLog() << "Number of frames in queue: " << ffmpegRecorder.m_Frames.size();
-
             if (time >= lastPathT + recordPathDt)
             {
                 std::shared_ptr<TileSet> tileset = tilesetManager.getTilsetAtWorldCoords(screenToWorld(screenCenter), currentZoom);
@@ -411,12 +405,6 @@ void ofApp::draw()
 
                 lastPathT += recordPathDt;
             }
-
-            // std::ofstream outfile;
-            // outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
-            // outfile << frameCount << "," << ofToString(time) << ","
-            //         << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
-            //         << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
 
             frameCount++;
         }
@@ -467,11 +455,18 @@ void ofApp::draw()
 
             ofDrawBitmapStringHighlight(coordinates, 0, ofGetHeight() - 40);
 
-            ofVec2f mouseGlobal = worldToGlobal(screenToWorld({mouseX, mouseY}), currentTileSet);
+            ofVec2f cursorWorld = screenToWorld(cursor);
+            ofVec2f cursorGlobal = worldToGlobal(cursorWorld, currentTileSet);
+            ofLog() << "cursorWorld: " << cursorWorld;
+
+            std::shared_ptr<TileSet> hoveredTileset = tilesetManager.getTilsetAtWorldCoords(cursorWorld, currentZoom);
+            std::string hoveredTilesetName = "<null>";
+            if (hoveredTileset)
+                hoveredTilesetName = hoveredTileset->name;
 
             std::string status = std::format(
-                "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, Tileset: {} Global mouse {:6},{:6}",
-                currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName, mouseGlobal.x, mouseGlobal.y);
+                "Zoom: {:.2f} (ZoomLevel {}, Scale: {:.2f}), Theta: {:.2f} \nCache: MAIN {}, SECONDARY {} (cache misses: {}), frameReady {:6}, drill {}, t {:.2f}, currentTileset: {} Global mouse {:.6f},{:.6f} (Tileset under cursor: {})",
+                currentZoomSmooth.getValue(), currentZoomLevel, currentView.scale, currentView.theta, cacheMain.size(), cacheSecondary.size(), cacheMisses, frameReady, drill, time, tilesetName, cursorGlobal.x, cursorGlobal.y, hoveredTilesetName);
 
             ofDrawBitmapStringHighlight(status, 0, ofGetHeight() - 20);
 
@@ -646,10 +641,7 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
     else if (ev.key == 'e')
         renderScreenShot();
     else if (ev.key == OF_KEY_ESC)
-    {
-        // ofLog() << "Exit";
-        quitting = !quitting;
-    }
+        quitting = true;
 }
 
 //--------------------------------------------------------------
@@ -1365,7 +1357,6 @@ void ofApp::jumpToSequenceStep(size_t step, bool focusZoom)
         }
         else if (auto *drill = dynamic_cast<Drill *>(ev.get()))
         {
-            // jumpTo(*poi);
             jumpZoom(drill->value);
 
             continue;
@@ -1373,23 +1364,6 @@ void ofApp::jumpToSequenceStep(size_t step, bool focusZoom)
 
         ev->accept(*this);
     }
-
-    //
-    // else if (auto *drill = dynamic_cast<Drill *>(ev.get()) && step > 0)
-    // {
-    //     size_t lastPOI = step - 1;
-    //     while (lastPOI >= 0)
-    //     {
-    //         auto ev2 = sequence[lastPOI];
-    //         if (auto *poi = dynamic_cast<POI *>(ev2.get()))
-    //         {
-    //             jumpTo(*poi);
-    //             jumpZoom(drill->value);
-    //             break;
-    //         }
-    //         lastPOI--;
-    //     }
-    // }
 }
 
 size_t ofApp::addSequenceEvent(std::shared_ptr<SequenceEvent> ev, int position)

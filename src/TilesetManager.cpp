@@ -389,8 +389,8 @@ std::shared_ptr<TileSet> TilesetManager::getTilsetAtWorldCoords(const ofVec2f &c
         if (
             tileset->offset.x < coords.x &&
             tileset->offset.y < coords.y &&
-            tileset->offset.x + tileset->zoomWorldSizes.at(currentZoom).x &&
-            tileset->offset.y + tileset->zoomWorldSizes.at(currentZoom).y)
+            tileset->offset.x + tileset->zoomWorldSizes.at(currentZoom).x > coords.x &&
+            tileset->offset.y + tileset->zoomWorldSizes.at(currentZoom).y > coords.y)
         {
             return tileset;
         }

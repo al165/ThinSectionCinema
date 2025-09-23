@@ -397,7 +397,7 @@ void ofApp::draw()
                 outfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv", std::ofstream::out | std::ios_base::app);
 
                 // t,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi
-                outfile << ofToString(time) << ","
+                outfile << ofToString(time) << "," << frameCount << ","
                         << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
                         << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y) << ","
                         << tileset->name << "," << next << "," << currentPOI
@@ -457,7 +457,6 @@ void ofApp::draw()
 
             ofVec2f cursorWorld = screenToWorld(cursor);
             ofVec2f cursorGlobal = worldToGlobal(cursorWorld, currentTileSet);
-            ofLog() << "cursorWorld: " << cursorWorld;
 
             std::shared_ptr<TileSet> hoveredTileset = tilesetManager.getTilsetAtWorldCoords(cursorWorld, currentZoom);
             std::string hoveredTilesetName = "<null>";
@@ -534,7 +533,7 @@ void ofApp::draw()
         return;
     }
 
-    if (!hideGui)
+    if (!hideGui || quitting)
         drawGUI();
 }
 
@@ -616,7 +615,7 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
 
             std::ofstream pathfile;
             pathfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv");
-            pathfile << "t,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
+            pathfile << "t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
 
             time = 0.f;
         }

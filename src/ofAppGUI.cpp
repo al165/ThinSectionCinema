@@ -456,15 +456,14 @@ void ofApp::drawGUI()
                 }
                 ImGui::PopStyleColor();
 
-                static size_t lastEditing = 0;
                 if (ImGui::BeginPopupContextItem())
                 {
-                    selected_event = i;
                     static float newValue = ev->value;
-                    if (lastEditing != i)
+                    selected_event = i;
+                    if (ImGui::IsWindowAppearing())
                     {
                         newValue = ev->value;
-                        lastEditing = i;
+                        ImGui::SetKeyboardFocusHere();
                     }
 
                     if (ev->type != "poi")

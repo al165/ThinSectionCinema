@@ -75,7 +75,7 @@ public:
     float recordingFps = 30.f;
 
     bool recordPath = false;
-    float recordPathDt = 1.f;
+    float recordPathDt = 0.1;
     float lastPathT = -recordPathDt * 2.f;
 
     bool showDebug = true;

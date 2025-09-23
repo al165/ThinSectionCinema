@@ -184,7 +184,7 @@ void TilesetManager::loadTileList(const std::string &set)
 
     tileset.t1 = tileset.thetaLevels[0];
     tileset.t2 = tileset.thetaLevels[1];
-    tilesets[set] = tileset;
+    tilesets[set] = std::make_shared<TileSet>(tileset);
 }
 
 void TilesetManager::addTileSet(const std::string &name, const std::string &position = "", const std::string &alignment = "", const std::string &relativeTo = "")
@@ -211,18 +211,18 @@ void TilesetManager::addTileSet(const std::string &name, const std::string &posi
     else if (position == "above")
         positionStruct.position = Position::ABOVE;
 
-    tilesetList.push_back(&tilesets[name]);
+    tilesetList.push_back(tilesets[name]);
     layout.push_back(positionStruct);
 }
 
 void TilesetManager::computeLayout(Zoom currentZoom)
 {
-    TileSet *prevTileset = nullptr;
+    std::shared_ptr<TileSet> prevTileset = nullptr;
 
     for (size_t i = 0; i < layout.size(); i++)
     {
         LayoutPosition pos = layout[i];
-        TileSet *thisTileset = &tilesets[pos.name];
+        std::shared_ptr<TileSet> thisTileset = tilesets[pos.name];
 
         if (i == 0)
         {
@@ -232,7 +232,7 @@ void TilesetManager::computeLayout(Zoom currentZoom)
         }
 
         if (pos.relativeTo.size() > 0 && tilesets.contains(pos.relativeTo))
-            prevTileset = &tilesets.at(pos.relativeTo);
+            prevTileset = tilesets.at(pos.relativeTo);
 
         ofVec2f prevOffset = prevTileset->offset;
         ofVec2f prevSize = prevTileset->zoomWorldSizes[currentZoom];
@@ -353,38 +353,55 @@ bool TilesetManager::loadLayout(const std::string &name)
 
 void TilesetManager::updateTheta(Theta theta)
 {
-    for (auto &[set, tileset] : tilesets)
+    for (auto tileset : tilesetList)
     {
         int thetaIndex = 0;
-        for (size_t i = 0; i < tileset.thetaLevels.size(); i++)
+        for (size_t i = 0; i < tileset->thetaLevels.size(); i++)
         {
-            if (tileset.thetaLevels[i] > theta)
+            if (tileset->thetaLevels[i] > theta)
                 break;
             thetaIndex = i;
         }
 
         // compute alpha blend
-        tileset.t1 = tileset.thetaLevels[thetaIndex];
-        tileset.t2 = tileset.thetaLevels[(thetaIndex + 1) % tileset.thetaLevels.size()];
+        tileset->t1 = tileset->thetaLevels[thetaIndex];
+        tileset->t2 = tileset->thetaLevels[(thetaIndex + 1) % tileset->thetaLevels.size()];
         int t2;
-        if (thetaIndex == static_cast<int>(tileset.thetaLevels.size()) - 1)
-            t2 = tileset.thetaLevels[0] + 180;
+        if (thetaIndex == static_cast<int>(tileset->thetaLevels.size()) - 1)
+            t2 = tileset->thetaLevels[0] + 180;
         else
-            t2 = tileset.t2;
+            t2 = tileset->t2;
 
-        tileset.blendAlpha = ofMap(theta, (float)tileset.t1, (float)(t2), 0.f, 1.f);
+        tileset->blendAlpha = ofMap(theta, (float)tileset->t1, (float)(t2), 0.f, 1.f);
     }
 }
 
 void TilesetManager::updateScale(float multiplier)
 {
-    for (auto &ts : tilesets)
-        ts.second.offset *= multiplier;
+    for (auto ts : tilesetList)
+        ts->offset *= multiplier;
 }
 
-TileSet *TilesetManager::operator[](const std::string &name)
+std::shared_ptr<TileSet> TilesetManager::getTilsetAtWorldCoords(const ofVec2f &coords, Zoom currentZoom) const
 {
-    return &(tilesets[name]);
+    for (auto tileset : tilesetList)
+    {
+        if (
+            tileset->offset.x < coords.x &&
+            tileset->offset.y < coords.y &&
+            tileset->offset.x + tileset->zoomWorldSizes.at(currentZoom).x &&
+            tileset->offset.y + tileset->zoomWorldSizes.at(currentZoom).y)
+        {
+            return tileset;
+        }
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<TileSet> TilesetManager::operator[](const std::string &name)
+{
+    return tilesets[name];
 }
 
 bool TilesetManager::contains(const std::string &name) const

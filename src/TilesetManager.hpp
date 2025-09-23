@@ -24,7 +24,9 @@ public:
     void updateTheta(Theta theta);
     void updateScale(float multiplier);
 
-    TileSet *operator[](const std::string &name);
+    std::shared_ptr<TileSet> getTilsetAtWorldCoords(const ofVec2f &coords, Zoom currentZoom) const;
+
+    std::shared_ptr<TileSet> operator[](const std::string &name);
     bool contains(const std::string &name) const;
     size_t size() const;
 
@@ -32,8 +34,8 @@ public:
     std::string tilesetsRoot;
     std::vector<std::string> scanListOptions;
 
-    std::unordered_map<std::string, TileSet> tilesets;
-    std::vector<TileSet *> tilesetList;
+    std::unordered_map<std::string, std::shared_ptr<TileSet>> tilesets;
+    std::vector<std::shared_ptr<TileSet>> tilesetList;
     size_t tileset_index = 0;
 
     std::vector<LayoutPosition> layout;

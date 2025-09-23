@@ -267,7 +267,7 @@ void ofApp::drawGUI()
             ImGui::SeparatorText("POI");
             ImGuiStyle &style = ImGui::GetStyle();
             ImVec2 button_sz(40, 40);
-            size_t poiCount = tilesetManager.tilesets[selectedTilesetName].viewTargets.size();
+            size_t poiCount = tilesetManager.tilesets[selectedTilesetName]->viewTargets.size();
             float window_visible_x2 = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
             for (size_t n = 0; n < poiCount; n++)
             {
@@ -279,7 +279,7 @@ void ofApp::drawGUI()
                 {
                     scan_poi_idx = n;
 
-                    ofVec2f coords = globalToWorld(tilesetManager.tilesets[selectedTilesetName].viewTargets[n], &tilesetManager.tilesets[selectedTilesetName]);
+                    ofVec2f coords = globalToWorld(tilesetManager.tilesets[selectedTilesetName]->viewTargets[n], tilesetManager.tilesets[selectedTilesetName]);
                     if (focusOnSelect)
                     {
                         jumpTo(coords);

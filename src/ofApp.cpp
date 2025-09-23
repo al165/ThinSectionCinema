@@ -86,10 +86,6 @@ void ofApp::setup()
     outfile.open("tween.csv", std::ofstream::out | std::ofstream::trunc);
     outfile << "frameCount,t,currentViewX,currentViewY,deltaX,deltaY" << std::endl;
 
-    std::ofstream pathfile;
-    pathfile.open("path.csv");
-    pathfile << "t,leftX,leftY,rightX,rightY" << std::endl;
-
     ofResetElapsedTimeCounter();
 
     gui.setup(nullptr, true);
@@ -206,8 +202,6 @@ void ofApp::update()
             vel *= multiplier;
             tilesetManager.updateScale(multiplier);
 
-            ofLog() << "multiplier: " << multiplier;
-
             lastZoomLevel = currentZoomLevel;
             calculateViewMatrix();
         }
@@ -316,14 +310,14 @@ void ofApp::draw()
     float elapsedTime = ofGetElapsedTimef();
     lastFrameTime = elapsedTime;
 
-    for (const auto &[set, tileset] : tilesetManager.tilesets)
+    for (const auto tileset : tilesetManager.tilesetList)
         drawTiles(tileset);
 
     fboFinal.begin();
     ofBackground(0, 0, 0);
 
-    for (const auto &[set, tileset] : tilesetManager.tilesets)
-        tileset.fboMain.draw(0, 0);
+    for (const auto tileset : tilesetManager.tilesetList)
+        tileset->fboMain.draw(0, 0);
 
     ofVec2f cursor(static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY()));
     const float margin = 6.f;
@@ -417,11 +411,14 @@ void ofApp::draw()
 
             if (time >= lastPathT + recordPathDt)
             {
-                ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), currentTileSet);
-                ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), currentTileSet);
+                std::shared_ptr<TileSet> tileset = tilesetManager.getTilsetAtWorldCoords(screenToWorld(screenCenter), currentZoom);
+
+                ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), tileset);
+                ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), tileset);
+                ofVec2f centerGlobal = (leftGlobal + rightGlobal) / 2.f;
 
                 std::ofstream outfile;
-                outfile.open("path.csv", std::ofstream::out | std::ios_base::app);
+                outfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv", std::ofstream::out | std::ios_base::app);
 
                 outfile << ofToString(time) << ","
                         << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
@@ -431,11 +428,11 @@ void ofApp::draw()
                 lastPathT += recordPathDt;
             }
 
-            std::ofstream outfile;
-            outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
-            outfile << frameCount << "," << ofToString(time) << ","
-                    << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
-                    << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
+            // std::ofstream outfile;
+            // outfile.open("tween.csv", std::ofstream::out | std::ios_base::app);
+            // outfile << frameCount << "," << ofToString(time) << ","
+            //         << ofToString(currentView.offsetWorld.x) << "," << ofToString(currentView.offsetWorld.y) << ","
+            //         << ofToString(offsetDelta.x) << "," << ofToString(offsetDelta.y) << std::endl;
 
             frameCount++;
         }
@@ -622,8 +619,8 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
         if (!recording)
         {
             // initialise recording
-            if (recordingFileName.value_or("").length() == 0)
-                recordingFileName = ofGetTimestampString("%Y-%m-%d_%H:%M:%S");
+            // if (recordingFileName.value_or("").length() == 0)
+            recordingFileName = ofGetTimestampString("%Y-%m-%d_%H:%M:%S");
 
             if (!recordingFolder.has_value())
                 recordingFolder = ofToDataPath("./", true);
@@ -637,6 +634,10 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
             ffmpegRecorder.addAdditionalInputArgument("-hide_banner");
             ffmpegRecorder.addAdditionalInputArgument("-loglevel error");
             ffmpegRecorder.startCustomRecord();
+
+            std::ofstream pathfile;
+            pathfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv");
+            pathfile << "t,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
 
             time = 0.f;
         }
@@ -729,12 +730,12 @@ void ofApp::windowResized(int w, int h)
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setPosition(ofGetWidth() / 2, ofGetHeight() / 2, 0);
 
-    for (auto &[set, tileset] : tilesetManager.tilesets)
+    for (auto tileset : tilesetManager.tilesetList)
     {
-        tileset.fboA.allocate(w, h, GL_RGBA);
-        tileset.fboB.allocate(w, h, GL_RGBA);
-        tileset.fboMain.allocate(w, h, GL_RGBA);
-        plane.mapTexCoordsFromTexture(tileset.fboMain.getTexture());
+        tileset->fboA.allocate(w, h, GL_RGBA);
+        tileset->fboB.allocate(w, h, GL_RGBA);
+        tileset->fboMain.allocate(w, h, GL_RGBA);
+        plane.mapTexCoordsFromTexture(tileset->fboMain.getTexture());
     }
 
     screenRectangle = ofRectangle(0.f, 0.f, static_cast<float>(ofGetWidth()), static_cast<float>(ofGetHeight()));
@@ -794,7 +795,7 @@ ofRectangle ofApp::getLayoutBounds()
     std::vector<float> xs;
     std::vector<float> ys;
 
-    for (const TileSet *tileset : tilesetManager.tilesetList)
+    for (std::shared_ptr<TileSet> tileset : tilesetManager.tilesetList)
     {
         ofVec2f offset = tileset->offset;
         ofVec2f size = tileset->zoomWorldSizes.at(currentZoom);
@@ -856,17 +857,17 @@ bool ofApp::updateCaches()
     }
 
     // 2. Check which tiles are needed
-    for (const auto &[set, tileset] : tilesetManager.tilesets)
+    for (auto tileset : tilesetManager.tilesetList)
     {
         // 2.1 Skip if tileset is not visible
-        ofVec2f tilesetSize = tileset.zoomWorldSizes.at(currentZoom);
+        ofVec2f tilesetSize = tileset->zoomWorldSizes.at(currentZoom);
         ofRectangle tilesetBounds{{0.f, 0.f}, tilesetSize};
-        if (!isVisible(tilesetBounds, tileset.offset))
+        if (!isVisible(tilesetBounds, tileset->offset))
             continue;
 
         // 2.2 Check tiles for current and next theta level
-        const auto &v1 = tileset.avaliableTiles.at(currentZoom).at(tileset.t1);
-        const auto &v2 = tileset.avaliableTiles.at(currentZoom).at(tileset.t2);
+        const auto &v1 = tileset->avaliableTiles.at(currentZoom).at(tileset->t1);
+        const auto &v2 = tileset->avaliableTiles.at(currentZoom).at(tileset->t2);
 
         for (const auto &vec : {std::cref(v1), std::cref(v2)})
         {
@@ -875,7 +876,7 @@ bool ofApp::updateCaches()
                 if (cacheMain.count(key))
                     continue;
 
-                if (!isVisible(key, tileset.offset))
+                if (!isVisible(key, tileset->offset))
                     continue;
 
                 ofTexture tile;
@@ -911,27 +912,27 @@ void ofApp::preloadZoom(int level)
     float top = currentView.viewWorld.getTop() / multiplier;
     float bottom = currentView.viewWorld.getBottom() / multiplier;
 
-    for (auto &[set, tileset] : tilesetManager.tilesets)
+    for (auto tileset : tilesetManager.tilesetList)
     {
         // check if tileset in frame first
-        ofVec2f tilesetSize = tileset.zoomWorldSizes.at(zoom);
+        ofVec2f tilesetSize = tileset->zoomWorldSizes.at(zoom);
         ofRectangle tilesetBounds{{0.f, 0.f}, tilesetSize};
-        if (!isVisible(tilesetBounds, tileset.offset))
+        if (!isVisible(tilesetBounds, tileset->offset))
             continue;
 
         int preloadCount = 0;
 
-        const auto &v1 = tileset.avaliableTiles.at(zoom).at(tileset.t1);
-        const auto &v2 = tileset.avaliableTiles.at(zoom).at(tileset.t2);
+        const auto &v1 = tileset->avaliableTiles.at(zoom).at(tileset->t1);
+        const auto &v2 = tileset->avaliableTiles.at(zoom).at(tileset->t2);
 
         for (const auto &vec : {std::cref(v1), std::cref(v2)})
         {
             for (const TileKey &key : vec.get())
             {
-                if (key.x + tileset.offset.x >= right ||
-                    (key.x + key.width + tileset.offset.x) <= left ||
-                    key.y + tileset.offset.y >= bottom ||
-                    (key.y + key.height + tileset.offset.y) <= top)
+                if (key.x + tileset->offset.x >= right ||
+                    (key.x + key.width + tileset->offset.x) <= left ||
+                    key.y + tileset->offset.y >= bottom ||
+                    (key.y + key.height + tileset->offset.y) <= top)
                     continue;
 
                 if (!cacheSecondary.contains(key, false))
@@ -945,7 +946,7 @@ void ofApp::preloadZoom(int level)
     }
 }
 
-void ofApp::drawTiles(const TileSet &tileset)
+void ofApp::drawTiles(std::shared_ptr<TileSet> tileset)
 {
     numberVisibleTiles = 0;
 
@@ -953,54 +954,54 @@ void ofApp::drawTiles(const TileSet &tileset)
     ofSetColor(255);
     ofSetLineWidth(1.f);
 
-    tileset.fboA.begin();
+    tileset->fboA.begin();
     ofClear(0.0f, 0.0f);
-    tileset.fboA.end();
+    tileset->fboA.end();
 
-    tileset.fboB.begin();
+    tileset->fboB.begin();
     ofClear(0.0f, 0.0f);
-    tileset.fboB.end();
+    tileset->fboB.end();
 
     for (const auto &[key, tile] : cacheMain)
     {
-        if (tileset.name != key.tileset)
+        if (tileset->name != key.tileset)
             continue;
 
         // draw thetas on different fbos
-        if (key.theta == tileset.t1)
-            tileset.fboA.begin();
-        else if (key.theta == tileset.t2)
-            tileset.fboB.begin();
+        if (key.theta == tileset->t1)
+            tileset->fboA.begin();
+        else if (key.theta == tileset->t2)
+            tileset->fboB.begin();
         else
             continue;
 
         ofPushMatrix();
         ofMultMatrix(viewMatrix);
         ofSetColor(255);
-        tile.draw(key.x + tileset.offset.x, key.y + tileset.offset.y);
+        tile.draw(key.x + tileset->offset.x, key.y + tileset->offset.y);
 
         if (showDebug && !recording)
         {
             ofSetColor(255, 0, 0);
             ofSetLineWidth(3.f);
-            ofDrawRectangle(key.x + tileset.offset.x, key.y + tileset.offset.y, key.width, key.height);
+            ofDrawRectangle(key.x + tileset->offset.x, key.y + tileset->offset.y, key.width, key.height);
         }
         ofPopMatrix();
 
-        if (key.theta == tileset.t1)
-            tileset.fboA.end();
+        if (key.theta == tileset->t1)
+            tileset->fboA.end();
         else
-            tileset.fboB.end();
+            tileset->fboB.end();
 
         numberVisibleTiles++;
     }
 
-    tileset.fboMain.begin();
+    tileset->fboMain.begin();
     ofClear(0.f, 0.f);
     blendShader.begin();
-    blendShader.setUniformTexture("texA", tileset.fboA.getTexture(), 1);
-    blendShader.setUniformTexture("texB", tileset.fboB.getTexture(), 2);
-    blendShader.setUniform1f("alpha", tileset.blendAlpha);
+    blendShader.setUniformTexture("texA", tileset->fboA.getTexture(), 1);
+    blendShader.setUniformTexture("texB", tileset->fboB.getTexture(), 2);
+    blendShader.setUniform1f("alpha", tileset->blendAlpha);
     plane.draw();
 
     blendShader.end();
@@ -1009,17 +1010,17 @@ void ofApp::drawTiles(const TileSet &tileset)
     {
         // Draw poi
         ofSetColor(255, 255, 0);
-        for (size_t i = 0; i < tileset.viewTargets.size(); i++)
+        for (size_t i = 0; i < tileset->viewTargets.size(); i++)
         {
-            ofVec2f vt = tileset.viewTargets[i];
-            ofVec2f poi = worldToScreen(globalToWorld(vt, &tileset));
+            ofVec2f vt = tileset->viewTargets[i];
+            ofVec2f poi = worldToScreen(globalToWorld(vt, tileset));
             ofDrawTriangle(poi, poi + ofVec2f(8, 10), poi + ofVec2f(-8, 10));
-            poi.x += 20 * sin(TWO_PI * i / tileset.viewTargets.size());
-            poi.y += 10 + 20 * cos(TWO_PI * i / tileset.viewTargets.size());
+            poi.x += 20 * sin(TWO_PI * i / tileset->viewTargets.size());
+            poi.y += 10 + 20 * cos(TWO_PI * i / tileset->viewTargets.size());
             ofDrawBitmapString(ofToString(i), poi);
         }
     }
-    tileset.fboMain.end();
+    tileset->fboMain.end();
 }
 
 void ofApp::calculateViewMatrix()
@@ -1230,7 +1231,7 @@ ofVec2f ofApp::worldToScreen(const ofVec2f &coords)
     return worldCoords * viewMatrix;
 }
 
-ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const TileSet *tileset) const
+ofVec2f ofApp::globalToWorld(const ofVec2f &coords, std::shared_ptr<TileSet> tileset) const
 {
     /*
         Converts normalised relative coordinates in [0, 1]^2 in tileset to world
@@ -1256,7 +1257,7 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords, const TileSet *tileset) cons
     return coords * zoomSize + tileset->offset;
 }
 
-ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, const TileSet *tileset) const
+ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, std::shared_ptr<TileSet> tileset) const
 {
     /*
         Converts current coordinates to normalised coordinates in [0, 1]^2

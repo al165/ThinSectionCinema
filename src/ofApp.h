@@ -90,7 +90,7 @@ public:
     ofRectangle screenRectangle;
     ofVec2f screenCenter;
 
-    TileSet *currentTileSet;
+    std::shared_ptr<TileSet> currentTileSet;
 
     float zoomSpeed = 4.f;
     const float maxZoom = 1.f;
@@ -157,7 +157,7 @@ public:
     ofRectangle getLayoutBounds();
     bool updateCaches();
     void preloadZoom(int level);
-    void drawTiles(const TileSet &tileset);
+    void drawTiles(std::shared_ptr<TileSet> tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
     void playSequence(int step = 0);
     void nextStep();
@@ -173,8 +173,8 @@ public:
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);
 
-    ofVec2f globalToWorld(const ofVec2f &coords, const TileSet *tileset) const;
-    ofVec2f worldToGlobal(const ofVec2f &coords, const TileSet *tileset) const;
+    ofVec2f globalToWorld(const ofVec2f &coords, std::shared_ptr<TileSet> tileset) const;
+    ofVec2f worldToGlobal(const ofVec2f &coords, std::shared_ptr<TileSet> tileset) const;
 
     void jumpTo(const ofVec2f &worldCoords);
     void jumpTo(const POI &poi);

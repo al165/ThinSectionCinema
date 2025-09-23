@@ -312,7 +312,14 @@ void ofApp::drawGUI()
     {
         ImGui::SeparatorText("Camera dampening");
         ImGui::SliderFloat("k", &k, 0.f, 10.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##cameraK"))
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("k", k), selected_event + 1);
+
         ImGui::SliderFloat("d", &d, 0.5f, 1.5f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##cameraD"))
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("d", d), selected_event + 1);
 
         ImGui::SeparatorText("Values");
         ImGui::SliderFloat("zoomSpeed", &zoomSpeed, 0.5f, 8.f);
@@ -360,28 +367,27 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##orientation"))
             selected_event = addSequenceEvent(std::make_shared<ParameterChange>("orientation", (float)targetOrientation), selected_event + 1);
 
+        if (ImGui::Button("Add All"))
+        {
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("k", k), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("d", d), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("zoomSpeed", zoomSpeed), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("drillSpeed", drillSpeed), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("drillTime", drillTime), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("spinSpeed", spinSpeed), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("flyHeight", flyHeight), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("thetaSpeed", thetaSpeed), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("minMovingTime", minMovingTime), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("maxMovingTime", maxMovingTime), selected_event + 1);
+            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("orientation", (float)targetOrientation), selected_event + 1);
+        }
+
         ImGui::Dummy({10, 10});
         ImGui::TreePop();
     }
 
     if (ImGui::TreeNode("Sequence"))
     {
-        ImGui::SeparatorText("Load / Save");
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Load sequence"))
-            loadSequence("sequence.json");
-        ImGui::PopStyleColor(3);
-
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
-        if (ImGui::Button("Save sequence"))
-            saveSequence("sequence.json");
-        ImGui::PopStyleColor(3);
-
         ImGui::SeparatorText("Jump state");
         static float jumpStateTheta = 0.f;
         ImGui::SliderFloat("theta", &jumpStateTheta, 0.f, 180.f);
@@ -403,7 +409,7 @@ void ofApp::drawGUI()
 
         ImGui::SeparatorText("Add event");
         static float waitTime = 1.0f;
-        ImGui::SliderFloat("waitTime", &waitTime, 0.f, 60.f);
+        ImGui::SliderFloat("waitTime", &waitTime, 0.f, 10.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##waitTime"))
             selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
@@ -414,7 +420,7 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##waitTheta"))
             selected_event = addSequenceEvent(std::make_shared<WaitTheta>(waitTheta), selected_event + 1);
 
-        ImGui::SliderFloat("drillDepth", &drillDepth, -1.f, 4.f);
+        ImGui::SliderFloat("drill", &drillDepth, -1.f, 4.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillDepth"))
             selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
@@ -445,41 +451,27 @@ void ofApp::drawGUI()
                     selected_event = i;
                     if (focusSequence)
                     {
-                        if (auto *poi = dynamic_cast<POI *>(ev.get()))
-                        {
-                            jumpTo(*poi);
-
-                            if (focusZoom)
-                                jumpZoom(2.f);
-                        }
-                        else if (auto *drill = dynamic_cast<Drill *>(ev.get()))
-                        {
-                            size_t lastPOI = i - 1;
-                            while (lastPOI >= 0)
-                            {
-                                auto ev2 = sequence[lastPOI];
-                                if (auto *poi = dynamic_cast<POI *>(ev2.get()))
-                                {
-                                    jumpTo(*poi);
-                                    jumpZoom(drill->value);
-                                    break;
-                                }
-                                lastPOI--;
-                            }
-                        }
+                        jumpToSequenceStep(i, focusZoom);
                     }
                 }
                 ImGui::PopStyleColor();
 
+                static size_t lastEditing = 0;
                 if (ImGui::BeginPopupContextItem())
                 {
                     selected_event = i;
                     static float newValue = ev->value;
+                    if (lastEditing != i)
+                    {
+                        newValue = ev->value;
+                        lastEditing = i;
+                    }
 
                     if (ev->type != "poi")
                     {
                         ImGui::SetNextItemWidth(-FLT_MIN);
-                        ImGui::DragFloat("##Value", &newValue, 0.1f);
+                        // ImGui::DragFloat("##Value", &newValue, 0.1f);
+                        ImGui::InputScalar("##Value", ImGuiDataType_Float, &newValue);
                     }
 
                     if (ImGui::Button("Delete"))
@@ -490,6 +482,7 @@ void ofApp::drawGUI()
                         ImGui::SameLine();
                         if (ImGui::Button("Update"))
                         {
+                            ofLog() << "Update to " << newValue;
                             ev->value = newValue;
                             ImGui::CloseCurrentPopup();
                         }
@@ -501,15 +494,12 @@ void ofApp::drawGUI()
                 if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
                 {
                     float dragY = ImGui::GetMouseDragDelta(0).y;
-                    // if (std::abs(dragY) > 2.0f)
-                    // {
                     int n_next = static_cast<int>(i) + (dragY < 0.f ? -1 : 1);
                     if (n_next >= 0 && n_next < (int)sequence.size())
                     {
                         std::swap(sequence[i], sequence[n_next]);
                         ImGui::ResetMouseDragDelta();
                     }
-                    // }
                 }
             }
             ImGui::EndListBox();
@@ -522,8 +512,23 @@ void ofApp::drawGUI()
             ImGui::Checkbox("Zoom", &focusZoom);
         }
 
-        ImGui::SeparatorText("Playback");
+        ImGui::SeparatorText("Load / Save");
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
+        if (ImGui::Button("Load sequence"))
+            loadSequence("sequence.json");
+        ImGui::PopStyleColor(3);
 
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
+        if (ImGui::Button("Save sequence"))
+            saveSequence("sequence.json");
+        ImGui::PopStyleColor(3);
+
+        ImGui::SeparatorText("Playback");
         ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
@@ -590,6 +595,33 @@ void ofApp::drawGUI()
 
         ImGui::Dummy({10, 10});
         ImGui::TreePop();
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+    if (quitting)
+        ImGui::OpenPopup("Quit");
+
+    if (ImGui::BeginPopupModal("Quit", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        quitting = false;
+        if (ImGui::Button("Quit no saving"))
+            ofExit();
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Save and exit"))
+        {
+            tilesetManager.saveLayout("layout.json");
+            saveSequence("sequence.json");
+            ofExit();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::End();

@@ -5,6 +5,7 @@ void ofApp::setup()
 {
     ofSetWindowTitle("As Gems in Metal");
     ofSetVerticalSync(true);
+    ofSetEscapeQuitsApp(false);
 
     // Setup shader stuff
     ofEnableAlphaBlending();
@@ -41,9 +42,6 @@ void ofApp::setup()
     recordingFolder = tbl["recording_folder"].value<std::string>();
     recordingFileName = tbl["recording_filename"].value<std::string>();
     std::optional<float> fps = tbl["recording_fps"].value<float>();
-    std::optional<float> minMove = tbl["min_moving_time"].value<float>();
-    std::optional<float> maxMove = tbl["max_moving_time"].value<float>();
-    std::optional<float> drillSpeedConfig = tbl["drill_speed"].value<float>();
 
     ofLogNotice() << "Loading config.toml:";
     ofLogNotice() << " - scans_root: " << rootFolder.value_or("<empty>");
@@ -55,9 +53,9 @@ void ofApp::setup()
     tilesetManager.setRoot(scanRoot);
 
     recordingFps = fps.value_or(30.f);
-    minMovingTime = minMove.value_or(8.f);
-    maxMovingTime = maxMove.value_or(8.f);
-    drillSpeed = drillSpeedConfig.value_or(0.4f);
+    minMovingTime = 8.f;
+    maxMovingTime = 30.f;
+    drillSpeed = 0.4f;
 
     plane.set(ofGetWidth(), ofGetHeight());
     plane.setScale(1, -1, 1);
@@ -183,36 +181,16 @@ void ofApp::update()
             maxZoomLevel, minZoomLevel);
 
         if (prevZoom > currentZoomSmooth.getValue() && std::fmodf(currentZoomSmooth.getValue(), 1.0f) < 0.5f)
-        {
             preloadZoom(currentZoomLevel - 1);
-        }
 
         if (currentZoomLevel != lastZoomLevel)
-        {
-            float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
-            currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoomSmooth.getValue());
-
-            zoomCenterWorld *= multiplier;
-            rotationCenterWorld *= multiplier;
-            viewTargetWorld *= multiplier;
-            viewStartWorld *= multiplier;
-            currentView.offsetWorld *= multiplier;
-            cameraTargetWorld *= multiplier;
-            offsetDelta *= multiplier;
-            vel *= multiplier;
-            tilesetManager.updateScale(multiplier);
-
-            lastZoomLevel = currentZoomLevel;
-            calculateViewMatrix();
-        }
+            updateScale();
 
         currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     }
 
     if (!sequencePlaying)
-    {
         currentView.offsetWorld += offsetDelta;
-    }
     else
     {
         // Apply dampening
@@ -413,6 +391,10 @@ void ofApp::draw()
             {
                 std::shared_ptr<TileSet> tileset = tilesetManager.getTilsetAtWorldCoords(screenToWorld(screenCenter), currentZoom);
 
+                std::string next = "";
+                if (currentTileSet)
+                    next = currentTileSet->name;
+
                 ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), tileset);
                 ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), tileset);
                 ofVec2f centerGlobal = (leftGlobal + rightGlobal) / 2.f;
@@ -420,9 +402,11 @@ void ofApp::draw()
                 std::ofstream outfile;
                 outfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv", std::ofstream::out | std::ios_base::app);
 
+                // t,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi
                 outfile << ofToString(time) << ","
                         << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
-                        << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y)
+                        << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y) << ","
+                        << tileset->name << "," << next << "," << currentPOI
                         << std::endl;
 
                 lastPathT += recordPathDt;
@@ -661,6 +645,11 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
     }
     else if (ev.key == 'e')
         renderScreenShot();
+    else if (ev.key == OF_KEY_ESC)
+    {
+        // ofLog() << "Exit";
+        quitting = !quitting;
+    }
 }
 
 //--------------------------------------------------------------
@@ -1037,6 +1026,26 @@ void ofApp::calculateViewMatrix()
     viewMatrixInverted = viewMatrix.getInverse();
 }
 
+float ofApp::updateScale()
+{
+    float multiplier = std::powf(2.f, (lastZoomLevel - currentZoomLevel));
+    currentView.scale = std::powf(2.f, static_cast<float>(currentZoomLevel) - currentZoomSmooth.getValue());
+
+    zoomCenterWorld *= multiplier;
+    rotationCenterWorld *= multiplier;
+    viewTargetWorld *= multiplier;
+    viewStartWorld *= multiplier;
+    currentView.offsetWorld *= multiplier;
+    cameraTargetWorld *= multiplier;
+    offsetDelta *= multiplier;
+    vel *= multiplier;
+    tilesetManager.updateScale(multiplier);
+
+    lastZoomLevel = currentZoomLevel;
+
+    return multiplier;
+}
+
 void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
 {
     if (currentTileSet == nullptr)
@@ -1121,6 +1130,7 @@ void ofApp::visit(POI &ev)
         return;
     }
     currentTileSet = tilesetManager[tileset];
+    currentPOI = (int)ev.poi;
     ofVec2f coords = globalToWorld(tilesetManager[tileset]->viewTargets[ev.poi], tilesetManager[tileset]);
 
     setViewTarget(coords, doneWaiting ? 0.f : 0.5f);
@@ -1151,11 +1161,15 @@ void ofApp::visit(ParameterChange &ev)
     {
         targetOrientation = ev.value > 0.f;
         orientationStartAngle = rotationAngle.getValue();
-
-        // orientationEndAngle = orientationStartAngle < 180.f ? 0.f : 360.f;
         orientationEndAngle = 0.f;
     }
-    nextStep();
+    else if (ev.parameter == "k")
+        k = ev.value;
+    else if (ev.parameter == "d")
+        d = ev.value;
+
+    if (sequencePlaying)
+        nextStep();
 }
 
 void ofApp::visit(WaitSeconds &ev)
@@ -1198,7 +1212,8 @@ void ofApp::visit(Jump &ev)
     else if (ev.state == "zoom")
         currentZoomSmooth.jumpTo(ev.value);
 
-    nextStep();
+    if (sequencePlaying)
+        nextStep();
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
@@ -1250,7 +1265,7 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords, std::shared_ptr<TileSet> til
     }
     catch (const std::exception &e)
     {
-        // ofLogError("globalToWorld") << e.what() << " (zoom: " << zoom << ", tileset: " << ")";
+        ofLogError("globalToWorld") << e.what() << " (zoom: " << currentZoom << ", tileset: " << tileset->name << ")";
         return coords;
     }
 
@@ -1286,6 +1301,7 @@ ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, std::shared_ptr<TileSet> til
 void ofApp::jumpTo(const ofVec2f &worldCoords)
 {
     currentView.offsetWorld = worldCoords;
+    cameraTargetWorld = worldCoords;
     zoomCenterWorld.set(worldCoords);
 
     viewTargetAnim.pause();
@@ -1301,7 +1317,8 @@ void ofApp::jumpTo(const POI &poi)
         return;
     }
     currentTileSet = tilesetManager[poi.tileset];
-    ofVec2f coords = globalToWorld(tilesetManager[poi.tileset]->viewTargets[poi.poi], tilesetManager[poi.tileset]);
+    ofVec2f coords = globalToWorld(currentTileSet->viewTargets[poi.poi], currentTileSet);
+    ofLog() << "POI coords: " << currentTileSet->viewTargets[poi.poi] << "   world: " << coords;
     jumpTo(coords);
 }
 
@@ -1321,7 +1338,58 @@ void ofApp::jumpZoom(float zoomLevel)
     currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
     focusViewTarget = false;
 
+    if (currentZoomLevel != lastZoomLevel)
+        updateScale();
+
     calculateViewMatrix();
+}
+
+void ofApp::jumpToSequenceStep(size_t step, bool focusZoom)
+{
+    sequencePlaying = false;
+
+    for (size_t i = 0; i <= step; i++)
+    {
+        auto ev = sequence[i];
+        if (ev->type == "wait-seconds" || ev->type == "wait-theta")
+            continue;
+
+        if (auto *poi = dynamic_cast<POI *>(ev.get()))
+        {
+            jumpTo(*poi);
+
+            if (focusZoom)
+                jumpZoom(2.f);
+
+            continue;
+        }
+        else if (auto *drill = dynamic_cast<Drill *>(ev.get()))
+        {
+            // jumpTo(*poi);
+            jumpZoom(drill->value);
+
+            continue;
+        }
+
+        ev->accept(*this);
+    }
+
+    //
+    // else if (auto *drill = dynamic_cast<Drill *>(ev.get()) && step > 0)
+    // {
+    //     size_t lastPOI = step - 1;
+    //     while (lastPOI >= 0)
+    //     {
+    //         auto ev2 = sequence[lastPOI];
+    //         if (auto *poi = dynamic_cast<POI *>(ev2.get()))
+    //         {
+    //             jumpTo(*poi);
+    //             jumpZoom(drill->value);
+    //             break;
+    //         }
+    //         lastPOI--;
+    //     }
+    // }
 }
 
 size_t ofApp::addSequenceEvent(std::shared_ptr<SequenceEvent> ev, int position)

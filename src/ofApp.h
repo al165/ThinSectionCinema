@@ -91,6 +91,7 @@ public:
     ofVec2f screenCenter;
 
     std::shared_ptr<TileSet> currentTileSet;
+    int currentPOI = -1;
 
     float zoomSpeed = 4.f;
     const float maxZoom = 1.f;
@@ -179,6 +180,7 @@ public:
     void jumpTo(const ofVec2f &worldCoords);
     void jumpTo(const POI &poi);
     void jumpZoom(float zoomLevel);
+    void jumpToSequenceStep(size_t step, bool focusZoom = true);
 
     size_t addSequenceEvent(std::shared_ptr<SequenceEvent> ev, int position = -1);
     bool saveSequence(const std::string &name);
@@ -192,6 +194,7 @@ public:
     ofPixels screenshot;
 
     void calculateViewMatrix();
+    float updateScale();
 
     // GUI stuff
     bool hideGui = false;
@@ -199,6 +202,7 @@ public:
     void drawGUI();
     bool disableMouse = false;
     bool disableKeyboard = false;
+    bool quitting = false;
 };
 
 void pasteInto(ofPixels &dstPixels, const ofPixels &src, int x, int y);

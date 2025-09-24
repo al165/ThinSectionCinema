@@ -15,20 +15,13 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Layout"))
     {
-        ImGui::SeparatorText("Save / Load");
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Load layout"))
-            tilesetManager.loadLayout("layout.json");
-        ImGui::PopStyleColor(3);
+        ImGui::SeparatorText("Save");
 
-        ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
         if (ImGui::Button("Save layout"))
-            tilesetManager.saveLayout("layout.json");
+            tilesetManager.saveLayout(layoutPath);
         ImGui::PopStyleColor(3);
 
         ImGui::SeparatorText("Add");
@@ -511,20 +504,13 @@ void ofApp::drawGUI()
             ImGui::Checkbox("Zoom", &focusZoom);
         }
 
-        ImGui::SeparatorText("Load / Save");
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(4.f / 7.f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(4.f / 7.f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(4.f / 7.f, 0.8f, 0.8f));
-        if (ImGui::Button("Load sequence"))
-            loadSequence("sequence.json");
-        ImGui::PopStyleColor(3);
+        ImGui::SeparatorText("Save");
 
-        ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0.0f, 0.6f, 0.6f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0.0f, 0.7f, 0.7f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0.0f, 0.8f, 0.8f));
         if (ImGui::Button("Save sequence"))
-            saveSequence("sequence.json");
+            saveSequence(sequencePath);
         ImGui::PopStyleColor(3);
 
         ImGui::SeparatorText("Playback");
@@ -611,8 +597,8 @@ void ofApp::drawGUI()
         ImGui::SameLine();
         if (ImGui::Button("Save and exit"))
         {
-            tilesetManager.saveLayout("layout.json");
-            saveSequence("sequence.json");
+            tilesetManager.saveLayout(layoutPath);
+            saveSequence(sequencePath);
             ofExit();
         }
         ImGui::SameLine();
@@ -622,6 +608,55 @@ void ofApp::drawGUI()
         }
         ImGui::EndPopup();
     }
+
+    ImGui::End();
+    gui.end();
+}
+
+void ofApp::drawWelcome()
+{
+    gui.begin();
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::Begin("Thin Section Cinema", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+
+    static size_t selected_project_idx = 0;
+    static std::string openName = "";
+    if (ImGui::BeginListBox("##recent-projects", ImVec2(-FLT_MIN, 5 * ImGui::GetTextLineHeightWithSpacing())))
+    {
+        for (size_t i = 0; i < projectsList.size(); i++)
+        {
+            bool is_selected = selected_project_idx == i;
+            if (ImGui::Selectable(projectsList[i].c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick))
+            {
+                selected_project_idx = i;
+                openName = projectsList[i];
+
+                if (ImGui::IsMouseDoubleClicked(0))
+                    loadProject(openName);
+            }
+        }
+
+        ImGui::EndListBox();
+    }
+
+    if (!openName.size())
+        ImGui::BeginDisabled();
+
+    if (ImGui::Button("Open"))
+        loadProject(openName);
+
+    if (!openName.size())
+        ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Create new");
+
+    static char newProject[128] = "";
+    ImGui::InputText("##project-name", newProject, IM_ARRAYSIZE(newProject));
+    ImGui::SameLine();
+    if (ImGui::Button("New..."))
+        createProject(newProject);
 
     ImGui::End();
     gui.end();

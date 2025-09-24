@@ -37,20 +37,31 @@ void ofApp::setup()
     }
     scanRoot.assign(rootFolder.value());
 
-    std::optional<std::string> layout = tbl["scan_layout"].value<std::string>();
+    std::optional<std::string> projectRootFolder = tbl["project_root"].value<std::string>();
+    if (!projectRootFolder.has_value())
+    {
+        ofLogError() << "config `project_root` is empty!";
+        return;
+    }
 
-    recordingFolder = tbl["recording_folder"].value<std::string>();
-    recordingFileName = tbl["recording_filename"].value<std::string>();
     std::optional<float> fps = tbl["recording_fps"].value<float>();
 
     ofLogNotice() << "Loading config.toml:";
     ofLogNotice() << " - scans_root: " << rootFolder.value_or("<empty>");
-    ofLogNotice() << " - scans_layout: " << layout.value_or("<empty>");
-    ofLogNotice() << " - recording_folder: " << recordingFolder.value_or("<empty>");
-    ofLogNotice() << " - recording_filename: " << recordingFileName.value_or("<empty>");
+    ofLogNotice() << " - projects_root: " << projectRootFolder.value_or("<empty>");
     ofLogNotice() << " - recording_fps: " << fps.value();
 
     tilesetManager.setRoot(scanRoot);
+    projectsDir.assign(projectRootFolder.value());
+
+    ofDirectory projects{projectsDir};
+    projects.listDir();
+
+    for (const ofFile &projectFile : projects)
+    {
+        if (projectFile.isDirectory())
+            projectsList.push_back(projectFile.getFileName());
+    }
 
     recordingFps = fps.value_or(30.f);
     minMovingTime = 8.f;
@@ -70,8 +81,6 @@ void ofApp::setup()
     currentZoomSmooth.epsilon = 0.0001f;
     currentTheta.warmUp = 0.0f;
 
-    ofVec2f centerWorld(0, 0);
-
     zoomCenterWorld = {0.f, 0.f};
     currentZoomLevel = std::floor(currentZoomSmooth.getValue());
     currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
@@ -86,30 +95,15 @@ void ofApp::setup()
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
     ofAddListener(drillZoomAnim.animFinished, this, &ofApp::animationFinished);
-
-    if (layout.has_value())
-    {
-        tilesetManager.loadLayout(layout.value());
-        tilesetManager.computeLayout(currentZoom);
-    }
-
-    if (tilesetManager.tilesetList.size())
-    {
-        currentTileSet = tilesetManager.tilesetList[0];
-        currentView.offsetWorld = worldToGlobal({0.5f, 0.5f}, currentTileSet);
-        centerWorld = globalToWorld({0.5f, 0.5f}, currentTileSet);
-    }
-
-    loadSequence("sequence.json");
-    currentView.offsetWorld.set(centerWorld);
-    cameraTargetWorld.set(centerWorld);
-    calculateViewMatrix();
 }
 
 //--------------------------------------------------------------
 void ofApp::update()
 {
     loader.dispatchMainCallbacks(32);
+
+    if (currentTileSet == nullptr && tilesetManager.tilesetList.size())
+        currentTileSet = tilesetManager.tilesetList[0];
 
     if (!frameReady)
     {
@@ -281,16 +275,23 @@ void ofApp::update()
 //--------------------------------------------------------------
 void ofApp::draw()
 {
+    if (newProject)
+    {
+        ofBackground(0, 0, 0);
+        drawWelcome();
+        return;
+    }
+
     float elapsedTime = ofGetElapsedTimef();
     lastFrameTime = elapsedTime;
 
-    for (const auto tileset : tilesetManager.tilesetList)
+    for (const auto &tileset : tilesetManager.tilesetList)
         drawTiles(tileset);
 
     fboFinal.begin();
     ofBackground(0, 0, 0);
 
-    for (const auto tileset : tilesetManager.tilesetList)
+    for (const auto &tileset : tilesetManager.tilesetList)
         tileset->fboMain.draw(0, 0);
 
     ofVec2f cursor(static_cast<float>(ofGetMouseX()), static_cast<float>(ofGetMouseY()));
@@ -391,10 +392,12 @@ void ofApp::draw()
 
                 ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), tileset);
                 ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), tileset);
-                ofVec2f centerGlobal = (leftGlobal + rightGlobal) / 2.f;
 
                 std::ofstream outfile;
-                outfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv", std::ofstream::out | std::ios_base::app);
+
+                fs::path tracePath{recordingDir};
+                tracePath /= (recordingFileName + "_path.csv");
+                outfile.open(tracePath, std::ofstream::out | std::ios_base::app);
 
                 // t,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi
                 outfile << ofToString(time) << "," << frameCount << ","
@@ -547,7 +550,7 @@ void ofApp::exit()
 //--------------------------------------------------------------
 void ofApp::keyPressed(ofKeyEventArgs &ev)
 {
-    if (disableKeyboard)
+    if (disableKeyboard || newProject)
         return;
 
     if (ev.key == OF_KEY_LEFT)
@@ -585,8 +588,8 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
     else if (ev.key == 's' && ev.hasModifier(OF_KEY_CONTROL))
     {
         ofLog() << "SAVING";
-        tilesetManager.saveLayout("layout.json");
-        saveSequence("sequence.json");
+        tilesetManager.saveLayout(projectName + "_layout.json");
+        saveSequence(projectName + "_seq.json");
     }
     else if (ev.key == 'p')
     {
@@ -595,42 +598,9 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
     else if (ev.key == 'r')
     {
         if (!recording)
-        {
-            // initialise recording
-            // if (recordingFileName.value_or("").length() == 0)
-            recordingFileName = ofGetTimestampString("%Y-%m-%d_%H:%M:%S");
-
-            if (!recordingFolder.has_value())
-                recordingFolder = ofToDataPath("./", true);
-
-            ofLogNotice() << "Recording to " << recordingFolder.value() + recordingFileName.value();
-
-            ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 10000);
-            ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
-            ffmpegRecorder.setOutputPath(recordingFolder.value() + recordingFileName.value() + ".mp4");
-            ffmpegRecorder.setVideoCodec("libx264");
-            ffmpegRecorder.addAdditionalInputArgument("-hide_banner");
-            ffmpegRecorder.addAdditionalInputArgument("-loglevel error");
-            ffmpegRecorder.startCustomRecord();
-
-            std::ofstream pathfile;
-            pathfile.open(recordingFolder.value() + recordingFileName.value() + "_path.csv");
-            pathfile << "t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
-
-            time = 0.f;
-        }
+            startRecording();
         else
-        {
-            // save
-            while (ffmpegRecorder.m_Frames.size())
-            {
-                ofSleepMillis(100);
-            }
-            waitForFrames = false;
-            ffmpegRecorder.stop();
-            time = 0.f;
-        }
-        recording = !recording;
+            stopRecording();
     }
     else if (ev.key == 'g')
     {
@@ -651,7 +621,7 @@ void ofApp::mouseMoved(int x, int y)
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button)
 {
-    if (disableMouse)
+    if (disableMouse || newProject)
         return;
     ofVec2f currentMouse(x, y);
 
@@ -669,7 +639,7 @@ void ofApp::mouseDragged(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mousePressed(int x, int y, int button)
 {
-    if (disableMouse)
+    if (disableMouse || newProject)
         return;
 
     lastMouse.set(x, y);
@@ -678,14 +648,14 @@ void ofApp::mousePressed(int x, int y, int button)
 //--------------------------------------------------------------
 void ofApp::mouseReleased(int x, int y, int button)
 {
-    if (disableMouse)
+    if (disableMouse || newProject)
         return;
 }
 
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 {
-    if (disableMouse)
+    if (disableMouse || newProject)
         return;
 
     drill = false;
@@ -727,6 +697,70 @@ void ofApp::windowResized(int w, int h)
 }
 
 //--------------------------------------------------------------
+
+void ofApp::createProject(const std::string &name)
+{
+    ofLog() << "createProject " << name;
+    newProject = false;
+    projectName = name;
+
+    // Create project folder if not exists
+    projectDir = fs::path{projectsDir};
+    projectDir /= name;
+
+    ofLog() << " - creating project folder " << projectDir;
+    fs::create_directories(projectDir);
+
+    recordingDir = fs::path{projectDir};
+    recordingDir /= "Renders";
+    ofLog() << " - creating project renders folder " << recordingDir;
+    fs::create_directories(recordingDir);
+
+    layoutPath = fs::path{projectDir};
+    layoutPath /= "layout.json";
+
+    sequencePath = fs::path{projectDir};
+    sequencePath /= "sequence.json";
+}
+
+void ofApp::loadProject(const std::string &name)
+{
+    ofLog() << "loadProject " << name;
+    newProject = false;
+    projectName = name;
+
+    projectDir = fs::path{projectsDir};
+    projectDir /= name;
+
+    recordingDir = fs::path{projectDir};
+    recordingDir /= "Renders";
+
+    layoutPath = fs::path{projectDir};
+    layoutPath /= "layout.json";
+
+    sequencePath = fs::path{projectDir};
+    sequencePath /= "sequence.json";
+
+    tilesetManager.loadLayout(layoutPath);
+    tilesetManager.computeLayout(currentZoom);
+
+    ofVec2f centerWorld(0, 0);
+
+    if (tilesetManager.tilesetList.size())
+    {
+        currentTileSet = tilesetManager.tilesetList[0];
+        currentView.offsetWorld = worldToGlobal({0.5f, 0.5f}, currentTileSet);
+        centerWorld = globalToWorld({0.5f, 0.5f}, currentTileSet);
+    }
+
+    loadSequence(sequencePath);
+
+    currentView.offsetWorld.set(centerWorld);
+    cameraTargetWorld.set(centerWorld);
+    calculateViewMatrix();
+
+    windowResized(ofGetWidth(), ofGetHeight());
+}
 
 bool ofApp::isVisible(const ofRectangle &worldRect, ofVec2f offset)
 {
@@ -1082,6 +1116,80 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     centerZoom = true;
 }
 
+void ofApp::startRecording()
+{
+    if (recording)
+    {
+        ofLogWarning() << "startRecording called while alreadyRecording";
+        return;
+    }
+
+    size_t count = 0;
+    ofDirectory recordings{recordingDir};
+    recordings.listDir();
+    auto recordingsList = recordings.getFiles();
+
+    bool nameAvailable = false;
+    while (!nameAvailable)
+    {
+        recordingFileName = projectName + "_" + ofToString(count, 2, '0');
+        nameAvailable = true;
+        for (auto &file : recordingsList)
+        {
+            if (file.getFileName() == recordingFileName + ".mp4")
+            {
+                count++;
+                nameAvailable = false;
+                break;
+            }
+        }
+    }
+
+    fs::path videoPath{recordingDir};
+    videoPath /= (recordingFileName + ".mp4");
+
+    ofLog() << "Starting recording at " << videoPath;
+
+    ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 10000);
+    ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
+    ffmpegRecorder.setOutputPath(videoPath);
+    ffmpegRecorder.setVideoCodec("libx264");
+    ffmpegRecorder.addAdditionalInputArgument("-hide_banner");
+    ffmpegRecorder.addAdditionalInputArgument("-loglevel error");
+    ffmpegRecorder.startCustomRecord();
+
+    // Prepare trace file
+    fs::path tracePath{recordingDir};
+    tracePath /= (recordingFileName + "_path.csv");
+    std::ofstream pathfile;
+    pathfile.open(tracePath);
+    pathfile << "t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
+
+    time = 0.f;
+    recording = true;
+}
+
+void ofApp::stopRecording()
+{
+    if (!recording)
+    {
+        ofLogWarning() << "stopRecording called without startRecording()";
+        return;
+    }
+
+    while (ffmpegRecorder.m_Frames.size())
+        ofSleepMillis(100);
+
+    waitForFrames = false;
+    ffmpegRecorder.stop();
+    time = 0.f;
+
+    // TODO: save state
+
+    recording = false;
+    ofLog() << "Render finished";
+}
+
 void ofApp::playSequence(int step)
 {
     sequencePlaying = true;
@@ -1245,7 +1353,7 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords, std::shared_ptr<TileSet> til
     */
     if (tileset == nullptr)
     {
-        ofLogWarning() << "ofApp::worldToGlobal tileset in null";
+        // ofLogWarning() << "ofApp::globalToWorld tileset in null";
         return coords;
     }
 
@@ -1256,7 +1364,7 @@ ofVec2f ofApp::globalToWorld(const ofVec2f &coords, std::shared_ptr<TileSet> til
     }
     catch (const std::exception &e)
     {
-        ofLogError("globalToWorld") << e.what() << " (zoom: " << currentZoom << ", tileset: " << tileset->name << ")";
+        // ofLogError("globalToWorld") << e.what() << " (zoom: " << currentZoom << ", tileset: " << tileset->name << ")";
         return coords;
     }
 
@@ -1271,7 +1379,7 @@ ofVec2f ofApp::worldToGlobal(const ofVec2f &coords, std::shared_ptr<TileSet> til
     */
     if (tileset == nullptr)
     {
-        ofLogWarning() << "ofApp::worldToGlobal tileset in null";
+        // ofLogWarning() << "ofApp::worldToGlobal tileset in null";
         return coords;
     }
 
@@ -1395,9 +1503,7 @@ bool ofApp::saveSequence(const std::string &name)
         root.append(obj);
     }
 
-    fs::path savePath{scanRoot};
-    savePath /= name;
-    return root.save(savePath, true);
+    return root.save(sequencePath, true);
 }
 
 bool ofApp::loadSequence(const std::string &name)
@@ -1405,12 +1511,12 @@ bool ofApp::loadSequence(const std::string &name)
     ofLogNotice() << "ofApp::loadSequence";
     ofxJSON root;
 
-    fs::path loadPath{scanRoot};
-    loadPath /= name;
-    bool result = root.open(loadPath);
+    bool result = root.open(sequencePath);
 
     if (result)
         sequence.clear();
+    else
+        return false;
 
     for (Json::ArrayIndex i = 0; i < root.size(); ++i)
     {

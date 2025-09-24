@@ -55,7 +55,11 @@ public:
     void mouseScrolled(int x, int y, float scrollX, float scrollY);
     void windowResized(int w, int h);
 
-    std::string scanRoot;
+    fs::path scanRoot;
+    fs::path projectsDir;
+    std::vector<std::string> projectsList;
+    fs::path projectDir, layoutPath, sequencePath;
+    std::string projectName;
     ofxCsv csv;
 
     ofFbo fboFinal;
@@ -63,8 +67,11 @@ public:
     ofPlanePrimitive plane;
 
     ofxFFmpegRecorder ffmpegRecorder;
-    std::optional<std::string> recordingFolder;
-    std::optional<std::string> recordingFileName;
+    // std::optional<std::string> recordingFolder;
+    // std::optional<std::string> recordingFileName;
+    std::string recordingFileName;
+    fs::path recordingDir;
+
     bool frameReady = false;
     bool recording = false;
     bool waitForFrames = false;
@@ -153,6 +160,8 @@ public:
     int sequenceStep;
     bool sequencePlaying = false;
 
+    void createProject(const std::string &name);
+    void loadProject(const std::string &name);
     bool isVisible(const ofRectangle &rect, ofVec2f offset = {0.f, 0.f});
     bool isVisible(const TileKey &key, ofVec2f offset = {0.f, 0.f});
     ofRectangle getLayoutBounds();
@@ -160,6 +169,8 @@ public:
     void preloadZoom(int level);
     void drawTiles(std::shared_ptr<TileSet> tileset);
     void setViewTarget(ofVec2f worldCoords, float delayS = 0.f);
+    void startRecording();
+    void stopRecording();
     void playSequence(int step = 0);
     void nextStep();
     void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
@@ -200,9 +211,11 @@ public:
     bool hideGui = false;
     ofxImGui::Gui gui;
     void drawGUI();
+    void drawWelcome();
     bool disableMouse = false;
     bool disableKeyboard = false;
     bool quitting = false;
+    bool newProject = true;
 };
 
 void pasteInto(ofPixels &dstPixels, const ofPixels &src, int x, int y);

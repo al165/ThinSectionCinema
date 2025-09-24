@@ -56,6 +56,7 @@ void ofApp::setup()
 
     ofDirectory projects{projectsDir};
     projects.listDir();
+    projects.sort();
 
     for (const ofFile &projectFile : projects)
     {
@@ -159,7 +160,8 @@ void ofApp::update()
 
     calculateViewMatrix();
 
-    currentZoomSmooth.speed = zoomSpeed;
+    if (!manualZooming)
+        currentZoomSmooth.speed = zoomSpeed;
 
     if (drill && drillZoomAnim.isAnimating() && !drillZoomAnim.getPaused())
         currentZoomSmooth.jumpTo(drillZoomAnim.getCurrentValue());
@@ -685,6 +687,7 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY)
 
     centerZoom = false;
     zoomCenterWorld.set(screenToWorld({(float)x, (float)y}));
+    manualZooming = true;
     currentZoomSmooth.speed = 2.f;
     currentZoomSmooth.warmUp = 0.f;
     currentZoomSmooth.setTarget(currentZoomSmooth.getTargetValue() - scrollY * 0.055f);
@@ -1110,7 +1113,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     dist /= sqrtf(2);
     float movementTime = max(minMovingTime, maxMovingTime * dist);
     float spinWaitTime = 1.f;
-    float spinTime = (movementTime - spinWaitTime) * 0.85f;
+    float spinTime = movementTime - spinWaitTime;
 
     viewTargetAnim.setDuration(movementTime);
     viewTargetAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
@@ -1219,6 +1222,7 @@ void ofApp::stopRecording()
 void ofApp::playSequence(int step)
 {
     sequencePlaying = true;
+    manualZooming = false;
     vel.set({0, 0});
     sequenceStep = step - 1;
     cameraTargetWorld = currentView.offsetWorld;
@@ -1388,6 +1392,23 @@ void ofApp::visit(Drill &ev)
     drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
     drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), ev.value);
     drill = true;
+}
+
+void ofApp::visit(Overview &ev)
+{
+    if (!currentTileSet)
+    {
+        ofLogWarning() << "Overview: no currentTileSet set";
+        nextStep();
+        return;
+    }
+
+    ofVec2f coords = globalToWorld({0.5f, 0.5f}, currentTileSet);
+
+    float oldFlyHeight = flyHeight;
+    flyHeight = ev.value;
+    setViewTarget(coords, doneWaiting ? 0.f : 0.5f);
+    flyHeight = oldFlyHeight;
 }
 
 void ofApp::visit(Jump &ev)
@@ -1570,6 +1591,13 @@ void ofApp::jumpToSequenceStep(size_t step, bool focusZoom)
 
             continue;
         }
+        else if (auto *overview = dynamic_cast<Overview *>(ev.get()))
+        {
+            jumpTo(globalToWorld({0.5f, 0.5f}, currentTileSet));
+            jumpZoom(overview->value);
+
+            continue;
+        }
 
         ev->accept(*this);
     }
@@ -1649,6 +1677,11 @@ bool ofApp::loadSequence(const std::string &name)
         {
             float value = root[i]["value"].asFloat();
             sequence.emplace_back(std::make_shared<Drill>(value));
+        }
+        else if (type == "overview")
+        {
+            float value = root[i]["value"].asFloat();
+            sequence.emplace_back(std::make_shared<Overview>(value));
         }
         else if (type == "wait-theta")
         {

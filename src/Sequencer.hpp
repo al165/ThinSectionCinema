@@ -5,6 +5,7 @@ struct ParameterChange;
 struct WaitSeconds;
 struct WaitTheta;
 struct Drill;
+struct Overview;
 struct Jump;
 struct Load;
 struct End;
@@ -17,6 +18,7 @@ public:
     virtual void visit(WaitSeconds &ev) = 0;
     virtual void visit(WaitTheta &ev) = 0;
     virtual void visit(Drill &ev) = 0;
+    virtual void visit(Overview &ev) = 0;
     virtual void visit(Jump &ev) = 0;
     virtual void visit(Load &ev) = 0;
     virtual void visit(End &ev) = 0;
@@ -139,6 +141,26 @@ struct Drill : SequenceEvent
     Drill(float v)
     {
         type = "drill";
+        value = v;
+    }
+
+    void accept(Visitor &v) override
+    {
+        v.visit(*this);
+    }
+
+    void save(Json::Value &obj)
+    {
+        obj["type"] = type;
+        obj["value"] = value;
+    }
+};
+
+struct Overview : SequenceEvent
+{
+    Overview(float v)
+    {
+        type = "overview";
         value = v;
     }
 

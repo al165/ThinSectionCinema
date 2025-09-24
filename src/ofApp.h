@@ -105,6 +105,7 @@ public:
     const float minZoom = 8.f;
     const int maxZoomLevel = 1;
     const int minZoomLevel = 5;
+    bool manualZooming = true;
     SmoothValueLinear currentZoomSmooth = {4.f, 5.3f, -10.f, 8.f};
     ofxAnimatableFloat drillZoomAnim;
     int currentZoomLevel = 5;
@@ -182,6 +183,7 @@ public:
     void visit(WaitSeconds &ev) override;
     void visit(WaitTheta &ev) override;
     void visit(Drill &ev) override;
+    void visit(Overview &ev) override;
     void visit(Jump &ev) override;
     void visit(Load &ev) override;
     void visit(End &ev) override;

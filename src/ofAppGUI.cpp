@@ -413,6 +413,12 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##drillDepth"))
             selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
 
+        static float overviewHeight = 4.f;
+        ImGui::SliderFloat("overview", &overviewHeight, 0.f, 4.f);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##overviewHeight"))
+            selected_event = addSequenceEvent(std::make_shared<Overview>(overviewHeight), selected_event + 1);
+
         if (ImGui::Button("+ Load state file"))
         {
             ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
@@ -463,17 +469,32 @@ void ofApp::drawGUI()
                         ImGui::SetKeyboardFocusHere();
                     }
 
-                    if (ev->type != "poi")
+                    bool canUpdate = false;
+                    if (ev->type == "load")
+                    {
+                        if (ImGui::Button("Change state file"))
+                        {
+                            ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
+                            if (result.bSuccess)
+                            {
+                                auto *loadEv = dynamic_cast<Load *>(ev.get());
+                                if (loadEv)
+                                    loadEv->statePath = result.getPath();
+                            }
+                        }
+                    }
+                    else if (ev->type != "poi")
                     {
                         ImGui::SetNextItemWidth(-FLT_MIN);
-                        // ImGui::DragFloat("##Value", &newValue, 0.1f);
                         ImGui::InputScalar("##Value", ImGuiDataType_Float, &newValue);
+
+                        canUpdate = true;
                     }
 
                     if (ImGui::Button("Delete"))
                         sequence.erase(sequence.begin() + selected_event);
 
-                    if (ev->type != "poi")
+                    if (canUpdate)
                     {
                         ImGui::SameLine();
                         if (ImGui::Button("Update"))
@@ -627,7 +648,7 @@ void ofApp::drawWelcome()
 
     static size_t selected_project_idx = 0;
     static std::string openName = "";
-    if (ImGui::BeginListBox("##recent-projects", ImVec2(-FLT_MIN, 5 * ImGui::GetTextLineHeightWithSpacing())))
+    if (ImGui::BeginListBox("##recent-projects", ImVec2(-FLT_MIN, 10 * ImGui::GetTextLineHeightWithSpacing())))
     {
         for (size_t i = 0; i < projectsList.size(); i++)
         {

@@ -175,12 +175,16 @@ public:
     void nextStep();
     void animationFinished(ofxAnimatableFloat::AnimationEvent &ev);
     void valueReached(SmoothValueLinear::SmoothValueEvent &ev);
+    void dumpState(const std::string &path);
+    void loadState(const std::string &path);
     void visit(POI &ev) override;
     void visit(ParameterChange &ev) override;
     void visit(WaitSeconds &ev) override;
     void visit(WaitTheta &ev) override;
     void visit(Drill &ev) override;
     void visit(Jump &ev) override;
+    void visit(Load &ev) override;
+    void visit(End &ev) override;
 
     ofVec2f screenToWorld(const ofVec2f &coords);
     ofVec2f worldToScreen(const ofVec2f &coords);
@@ -216,6 +220,8 @@ public:
     bool disableKeyboard = false;
     bool quitting = false;
     bool newProject = true;
+
+    std::unordered_map<std::string, float *> parameters;
 };
 
 void pasteInto(ofPixels &dstPixels, const ofPixels &src, int x, int y);

@@ -22,6 +22,24 @@ Includes [TOML++](https://marzer.github.io/tomlplusplus/index.html) header file 
 5. setup a tile scan folder of images and the `config.toml`
 6. `./bin/thinsections` to run.
 
+## Project Folder structure
+
+When creating a new new project, the following folder structure is created in `project_root` (defined in the [Config](#config)).
+
+```directory
+<project_root>                                <-- Folder of all projects
+├── <project_name>                            <-- User defined name of the project
+│   ├── Renders                               <-- Directory of renderings
+│   │   ├── <project_name>_00.mp4             <-- Sequentially named render
+│   │   ├── <project_name>_00_endstate.json   <-- State information of last frame
+│   │   ├── <project_name>_00_path.json       <-- Path traced by the camera
+│   │   └── ...
+│   ├── layout.json                           <-- Layout of tilesets
+│   └── sequence.json                         <-- Sequence of events
+└── ...
+
+```
+
 ## Tile scans folder format
 
 The tiles need to be jpgs in the following folder structure:
@@ -51,11 +69,8 @@ The (optional) `poi.csv` file should have the following headings: `index, x, y, 
 
 Copy `config_template.toml` to `bin/data/config.toml` and edit with the following options:
 
-- `scans_root` (required) Root folder of all scans. Must end in '/'.
-- `scan_layout` (optional) JSON file to load the layout.
-- `min_moving_time`, `max_moving_time` (optional) Defaults 8.0, 45.0. Min/Maximum time (in seconds) to move between targets.
-- `recording_folder` (optional) Absolute path to folder that recordings will save to.
-- `recording_filename` (optional) Name of saved recording (without `.mp4`). If not specified, the default name will be the time and date.
+- `scans_root` (required) Root folder of all scans.
+- `project_root` (required) Root folder of projects.
 - `recording_fps` (optional) Default 60. Frames per second of output recording.
 
 ## License

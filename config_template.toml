@@ -1,10 +1,4 @@
-scans_root = "/absolute/path/to/scans/root/folder"  # REQUIRED must have a trailing '/'
-scans = []  # REQUIRED
+scans_root = "/absolute/path/to/scans/root/folder"      # REQUIRED
+project_root = "/absolute/path/to/your/projects/folder" # REQUIRED
 
-min_moving_time = 8.0
-max_moving_time = 45.0
-drill_speed = -0.1
-
-recording_folder = ""
-recording_filename = ""
-recording_fps = 30.0
+recording_fps = 60.0

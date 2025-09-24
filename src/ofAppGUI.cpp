@@ -355,11 +355,6 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##maxMovingTime"))
             selected_event = addSequenceEvent(std::make_shared<ParameterChange>("maxMovingTime", maxMovingTime), selected_event + 1);
 
-        ImGui::Checkbox("orientation", &targetOrientation);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##orientation"))
-            selected_event = addSequenceEvent(std::make_shared<ParameterChange>("orientation", (float)targetOrientation), selected_event + 1);
-
         if (ImGui::Button("Add All"))
         {
             selected_event = addSequenceEvent(std::make_shared<ParameterChange>("k", k), selected_event + 1);
@@ -381,7 +376,7 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Sequence"))
     {
-        ImGui::SeparatorText("Jump state");
+        ImGui::SeparatorText("Jump value");
         static float jumpStateTheta = 0.f;
         ImGui::SliderFloat("theta", &jumpStateTheta, 0.f, 180.f);
         ImGui::SameLine();
@@ -400,7 +395,7 @@ void ofApp::drawGUI()
         if (ImGui::SmallButton("+##jumpZoom"))
             selected_event = addSequenceEvent(std::make_shared<Jump>("zoom", jumpStateZoom), selected_event + 1);
 
-        ImGui::SeparatorText("Add event");
+        ImGui::SeparatorText("Add action");
         static float waitTime = 1.0f;
         ImGui::SliderFloat("waitTime", &waitTime, 0.f, 10.f);
         ImGui::SameLine();
@@ -417,6 +412,15 @@ void ofApp::drawGUI()
         ImGui::SameLine();
         if (ImGui::SmallButton("+##drillDepth"))
             selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
+
+        if (ImGui::Button("+ Load state file"))
+        {
+            ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
+            if (result.bSuccess)
+                selected_event = addSequenceEvent(std::make_shared<Load>(result.getPath()), selected_event + 1);
+        }
+        if (ImGui::Button("+ End"))
+            selected_event = addSequenceEvent(std::make_shared<End>(), selected_event + 1);
 
         ImGui::SeparatorText("Edit sequence");
 

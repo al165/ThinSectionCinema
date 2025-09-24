@@ -95,6 +95,19 @@ void ofApp::setup()
 
     ofAddListener(viewTargetAnim.animFinished, this, &ofApp::animationFinished);
     ofAddListener(drillZoomAnim.animFinished, this, &ofApp::animationFinished);
+
+    parameters["drillSpeed"] = &drillSpeed;
+    parameters["zoomSpeed"] = &zoomSpeed;
+    parameters["spinSpeed"] = &spinSpeed;
+    parameters["drillDepth"] = &drillDepth;
+    parameters["drillTime"] = &drillTime;
+    parameters["flyHeight"] = &flyHeight;
+    parameters["thetaSpeed"] = &thetaSpeed;
+    parameters["minMovingTime"] = &minMovingTime;
+    parameters["maxMovingTime"] = &maxMovingTime;
+    // parameters["orientation"] = &targetOrientation;
+    parameters["k"] = &k;
+    parameters["d"] = &d;
 }
 
 //--------------------------------------------------------------
@@ -359,9 +372,10 @@ void ofApp::draw()
             eventName = sequence[sequenceStep]->toString();
 
         std::string renderInfo = std::format(
-            "Frame: {} Time: {:.4f}s  currentZoomSmooth {:.4f}  Tileset: {}  Last event: {}", frameCount, time, currentZoomSmooth.getValue(), tilesetName, eventName);
+            "{}\nFrame: {} Time: {:.4f}s  currentZoomSmooth {:.4f}  Tileset: {}  Last event: {}",
+            projectName, frameCount, time, currentZoomSmooth.getValue(), tilesetName, eventName);
 
-        ofDrawBitmapStringHighlight(renderInfo, 0, ofGetHeight() - 20);
+        ofDrawBitmapStringHighlight(renderInfo, 0, ofGetHeight() - (2 * 8 * 1.7f - 1));
 
         if (waitForFrames)
         {
@@ -506,7 +520,9 @@ void ofApp::draw()
                 rendering = false;
                 ofLog() << "screenshot pixelFormat: " << screenshot.getPixelFormat();
 
-                ofSaveImage(screenshot, "overview.png");
+                fs::path saveDir{projectsDir};
+                saveDir /= "overview.png";
+                ofSaveImage(screenshot, saveDir);
                 ofLog() << "Finished rendering";
 
                 x = 0;
@@ -611,6 +627,10 @@ void ofApp::keyPressed(ofKeyEventArgs &ev)
         renderScreenShot();
     else if (ev.key == OF_KEY_ESC)
         quitting = true;
+    else if (ev.key == '1')
+        dumpState("testState.json");
+    else if (ev.key == '2')
+        loadState("testState.json");
 }
 
 //--------------------------------------------------------------
@@ -1166,7 +1186,10 @@ void ofApp::startRecording()
     pathfile << "t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
 
     time = 0.f;
+    frameCount = 0;
     recording = true;
+
+    playSequence();
 }
 
 void ofApp::stopRecording()
@@ -1181,10 +1204,13 @@ void ofApp::stopRecording()
         ofSleepMillis(100);
 
     waitForFrames = false;
-    ffmpegRecorder.stop();
     time = 0.f;
+    ffmpegRecorder.stop();
 
-    // TODO: save state
+    fs::path statePath{recordingDir};
+    statePath /= (recordingFileName + "_endstate.json");
+
+    dumpState(statePath);
 
     recording = false;
     ofLog() << "Render finished";
@@ -1218,6 +1244,93 @@ void ofApp::nextStep()
     doneWaiting = false;
 }
 
+void ofApp::dumpState(const std::string &path)
+{
+    ofLog() << "dumpState to " << path;
+    ofxJSON root;
+
+    if (currentTileSet)
+    {
+        root["currentTileset"] = currentTileSet->name;
+
+        // get location over currentTileset
+        ofVec2f offsetTileset = worldToGlobal(currentView.offsetWorld, currentTileSet);
+        root["offsetTileset"]["x"] = offsetTileset.x;
+        root["offsetTileset"]["y"] = offsetTileset.y;
+    }
+
+    currentTheta.to_json(root["currentTheta"]);
+    rotationAngle.to_json(root["rotationAngle"]);
+    currentZoomSmooth.to_json(root["currentZoomSmooth"]);
+
+    root["vel"]["x"] = vel.x;
+    root["vel"]["y"] = vel.y;
+
+    root["cycleTheta"] = cycleTheta;
+
+    for (auto &[parameterName, ptr] : parameters)
+        root["parameters"][parameterName] = *ptr;
+
+    root.save(path, true);
+}
+
+void ofApp::loadState(const std::string &path)
+{
+    ofLog() << "loadState from " << path;
+
+    ofxJSON root;
+
+    bool result = root.open(path);
+    if (!result)
+    {
+        ofLogWarning() << path << " not loaded";
+        return;
+    }
+
+    currentTheta.from_json(root["currentTheta"]);
+    rotationAngle.from_json(root["rotationAngle"]);
+    currentZoomSmooth.from_json(root["currentZoomSmooth"]);
+
+    currentZoomLevel = std::clamp(
+        static_cast<int>(std::floor(currentZoomSmooth.getValue())),
+        maxZoomLevel,
+        minZoomLevel);
+
+    currentZoom = static_cast<int>(std::floor(std::powf(2, currentZoomLevel)));
+    focusViewTarget = false;
+
+    if (currentZoomLevel != lastZoomLevel)
+        updateScale();
+
+    calculateViewMatrix();
+
+    vel.x = root["vel"]["x"].asFloat();
+    vel.y = root["vel"]["y"].asFloat();
+
+    cycleTheta = root["cycleTheta"].asBool();
+
+    for (auto &parameterName : root["parameters"].getMemberNames())
+    {
+        if (parameters.contains(parameterName))
+        {
+            ofLog() << "Setting " << parameterName << " to " << root["parameters"][parameterName].asFloat();
+            *parameters[parameterName] = root["parameters"][parameterName].asFloat();
+        }
+    }
+
+    std::string tileset = root["currentTileset"].asString();
+    if (tilesetManager.contains(tileset))
+    {
+        currentTileSet = tilesetManager[tileset];
+
+        ofVec2f offsetTileset{root["offsetTileset"]["x"].asFloat(), root["offsetTileset"]["y"].asFloat()};
+        // currentView.offsetWorld = globalToWorld(offsetTileset, currentTileSet);
+        jumpTo(globalToWorld(offsetTileset, currentTileSet));
+    }
+    else
+        ofLogWarning() << " - Layout does not contain " << tileset << ", cannot load position";
+}
+
 void ofApp::visit(POI &ev)
 {
     std::string tileset = ev.tileset;
@@ -1238,34 +1351,11 @@ void ofApp::visit(POI &ev)
 void ofApp::visit(ParameterChange &ev)
 {
     ofLog() << "set parameter " << ev.parameter << " to " << ofToString(ev.value);
-    if (ev.parameter == "drillSpeed")
-        drillSpeed = ev.value;
-    else if (ev.parameter == "zoomSpeed")
-        zoomSpeed = ev.value;
-    else if (ev.parameter == "spinSpeed")
-        spinSpeed = ev.value;
-    else if (ev.parameter == "drillDepth")
-        drillDepth = ev.value;
-    else if (ev.parameter == "drillTime")
-        drillTime = ev.value;
-    else if (ev.parameter == "flyHeight")
-        flyHeight = ev.value;
-    else if (ev.parameter == "thetaSpeed")
-        thetaSpeed = ev.value;
-    else if (ev.parameter == "minMovingTime")
-        minMovingTime = ev.value;
-    else if (ev.parameter == "maxMovingTime")
-        maxMovingTime = ev.value;
-    else if (ev.parameter == "orientation")
-    {
-        targetOrientation = ev.value > 0.f;
-        orientationStartAngle = rotationAngle.getValue();
-        orientationEndAngle = 0.f;
-    }
-    else if (ev.parameter == "k")
-        k = ev.value;
-    else if (ev.parameter == "d")
-        d = ev.value;
+
+    if (parameters.contains(ev.parameter))
+        *(parameters[ev.parameter]) = ev.value;
+    else
+        ofLogWarning() << "unknown parameter " << ev.parameter;
 
     if (sequencePlaying)
         nextStep();
@@ -1313,6 +1403,18 @@ void ofApp::visit(Jump &ev)
 
     if (sequencePlaying)
         nextStep();
+}
+
+void ofApp::visit(Load &ev)
+{
+    loadState(ev.statePath);
+    nextStep();
+}
+
+void ofApp::visit(End &ev)
+{
+    sequencePlaying = false;
+    stopRecording();
 }
 
 void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
@@ -1560,6 +1662,14 @@ bool ofApp::loadSequence(const std::string &name)
 
             sequence.emplace_back(std::make_shared<Jump>(state, value));
         }
+        else if (type == "load")
+        {
+            std::string statePath = root[i]["statePath"].asString();
+
+            sequence.emplace_back(std::make_shared<Load>(statePath));
+        }
+        else if (type == "end")
+            sequence.emplace_back(std::make_shared<End>());
     }
     return result;
 }

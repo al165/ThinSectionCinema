@@ -31,7 +31,7 @@ public:
     size_t size() const;
 
     ofxCsv csv;
-    std::string tilesetsRoot;
+    fs::path tilesetsRoot;
     std::vector<std::string> scanListOptions;
 
     std::unordered_map<std::string, std::shared_ptr<TileSet>> tilesets;

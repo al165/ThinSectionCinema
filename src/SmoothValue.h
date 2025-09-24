@@ -2,6 +2,8 @@
 #include <math.h>
 #include "ofMain.h"
 
+#include <ofxJSON.h>
+
 class SmoothValueLinear
 {
 public:
@@ -91,6 +93,36 @@ public:
         elapsedTime += deltaS;
 
         return true;
+    }
+
+    void to_json(Json::Value &obj) const
+    {
+        obj["currentValue"] = currentValue;
+        obj["targetValue"] = targetValue;
+        obj["minimum"] = minimum;
+        obj["maximum"] = maximum;
+        obj["elapsedTime"] = elapsedTime;
+        obj["speed"] = speed;
+        obj["maxStep"] = maxStep;
+        obj["warmUp"] = warmUp;
+        obj["lastChange"] = lastChange;
+        obj["epsilon"] = epsilon;
+    }
+
+    void from_json(const Json::Value &obj)
+    {
+        currentValue = obj["currentValue"].asFloat();
+        targetValue = obj["targetValue"].asFloat();
+        minimum = obj["minimum"].asFloat();
+        maximum = obj["maximum"].asFloat();
+        elapsedTime = obj["elapsedTime"].asFloat();
+        speed = obj["speed"].asFloat();
+        maxStep = obj["maxStep"].asFloat();
+        warmUp = obj["warmUp"].asFloat();
+        lastChange = obj["lastChange"].asFloat();
+        epsilon = obj["epsilon"].asFloat();
+
+        needsProcessing = true;
     }
 
     float speed;

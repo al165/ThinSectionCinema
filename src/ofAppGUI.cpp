@@ -417,7 +417,18 @@ void ofApp::drawGUI()
         ImGui::SliderFloat("overview", &overviewHeight, 0.f, 4.f);
         ImGui::SameLine();
         if (ImGui::SmallButton("+##overviewHeight"))
-            selected_event = addSequenceEvent(std::make_shared<Overview>(overviewHeight), selected_event + 1);
+        {
+            for (size_t i = selected_event; i >= 0; i--)
+            {
+                if (sequence[i]->type != "poi")
+                    continue;
+
+                POI *poi = dynamic_cast<POI *>(sequence[i].get());
+
+                selected_event = addSequenceEvent(std::make_shared<Overview>(poi->tileset, overviewHeight), selected_event + 1);
+                break;
+            }
+        }
 
         if (ImGui::Button("+ Load state file"))
         {
@@ -431,7 +442,7 @@ void ofApp::drawGUI()
         ImGui::SeparatorText("Edit sequence");
 
         static bool focusSequence = true;
-        static bool focusZoom = true;
+        static bool focusZoom = false;
 
         if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
         {
@@ -441,22 +452,25 @@ void ofApp::drawGUI()
                 const bool is_selected = (selected_event == i);
 
                 if ((int)i == sequenceStep)
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
                 else if (ev->type == "poi")
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 255, 255));
                 else if (ev->type == "parameter")
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 180));
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 150));
+                else if (ev->type == "load")
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
+                else if (ev->type == "end")
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
                 else
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
 
                 if (ImGui::Selectable((ev->toString() + "##event" + ofToString(i)).c_str(), is_selected))
                 {
                     selected_event = i;
                     if (focusSequence)
-                    {
                         jumpToSequenceStep(i, focusZoom);
-                    }
                 }
+
                 ImGui::PopStyleColor();
 
                 if (ImGui::BeginPopupContextItem())
@@ -469,7 +483,6 @@ void ofApp::drawGUI()
                         ImGui::SetKeyboardFocusHere();
                     }
 
-                    bool canUpdate = false;
                     if (ev->type == "load")
                     {
                         if (ImGui::Button("Change state file"))
@@ -480,29 +493,36 @@ void ofApp::drawGUI()
                                 auto *loadEv = dynamic_cast<Load *>(ev.get());
                                 if (loadEv)
                                     loadEv->statePath = result.getPath();
+
+                                ImGui::CloseCurrentPopup();
                             }
                         }
                     }
                     else if (ev->type != "poi")
                     {
                         ImGui::SetNextItemWidth(-FLT_MIN);
-                        ImGui::InputScalar("##Value", ImGuiDataType_Float, &newValue);
-
-                        canUpdate = true;
-                    }
-
-                    if (ImGui::Button("Delete"))
-                        sequence.erase(sequence.begin() + selected_event);
-
-                    if (canUpdate)
-                    {
-                        ImGui::SameLine();
-                        if (ImGui::Button("Update"))
+                        if (ImGui::InputScalar("##Value", ImGuiDataType_Float, &newValue, NULL, NULL, NULL, ImGuiInputTextFlags_EnterReturnsTrue))
                         {
                             ofLog() << "Update to " << newValue;
                             ev->value = newValue;
                             ImGui::CloseCurrentPopup();
                         }
+                    }
+
+                    if (ImGui::Button("Delete"))
+                        sequence.erase(sequence.begin() + selected_event);
+
+                    if (ImGui::BeginMenu("Add"))
+                    {
+                        if (ImGui::MenuItem("waitTime"))
+                        {
+                            selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
+                        }
+                        if (ImGui::MenuItem("drill"))
+                        {
+                            selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
+                        }
+                        ImGui::EndMenu();
                     }
 
                     ImGui::EndPopup();
@@ -615,11 +635,10 @@ void ofApp::drawGUI()
 
     if (ImGui::BeginPopupModal("Quit", NULL, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        quitting = false;
         if (ImGui::Button("Quit no saving"))
             ofExit();
-        ImGui::SetItemDefaultFocus();
         ImGui::SameLine();
+        ImGui::SetItemDefaultFocus();
         if (ImGui::Button("Save and exit"))
         {
             tilesetManager.saveLayout(layoutPath);
@@ -629,6 +648,7 @@ void ofApp::drawGUI()
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(120, 0)))
         {
+            quitting = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

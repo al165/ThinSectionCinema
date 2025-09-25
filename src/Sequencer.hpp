@@ -158,9 +158,11 @@ struct Drill : SequenceEvent
 
 struct Overview : SequenceEvent
 {
-    Overview(float v)
+    std::string tileset;
+    Overview(const std::string &ts, float v)
     {
         type = "overview";
+        tileset = ts;
         value = v;
     }
 
@@ -169,9 +171,15 @@ struct Overview : SequenceEvent
         v.visit(*this);
     }
 
+    std::string toString() override
+    {
+        return type + "::" + tileset + "::" + ofToString(value);
+    }
+
     void save(Json::Value &obj)
     {
         obj["type"] = type;
+        obj["tileset"] = tileset;
         obj["value"] = value;
     }
 };

@@ -228,7 +228,7 @@ void ofApp::update()
         rotationAngle.setTarget(rotationAngle.getTargetValue() + 360.f);
         rotationAngle.setValue(rotationAngle.getValue() + 360.f);
     }
-    else if (rotationAngle.getValue() > 540.f)
+    else if (rotationAngle.getValue() >= 540.f)
     {
         rotationAngle.setTarget(rotationAngle.getTargetValue() - 360.f);
         rotationAngle.setValue(rotationAngle.getValue() - 360.f);
@@ -398,32 +398,32 @@ void ofApp::draw()
         {
             ffmpegRecorder.addSingleFrame(framePixels);
 
-            if (time >= lastPathT + recordPathDt)
-            {
-                std::shared_ptr<TileSet> tileset = tilesetManager.getTilsetAtWorldCoords(screenToWorld(screenCenter), currentZoom);
+            // if (time >= lastPathT + recordPathDt)
+            // {
+            std::shared_ptr<TileSet> tileset = tilesetManager.getTilsetAtWorldCoords(screenToWorld(screenCenter), currentZoom);
 
-                std::string next = "";
-                if (currentTileSet)
-                    next = currentTileSet->name;
+            std::string next = "";
+            if (currentTileSet)
+                next = currentTileSet->name;
 
-                ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), tileset);
-                ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), tileset);
+            ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), tileset);
+            ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), tileset);
 
-                std::ofstream outfile;
+            std::ofstream outfile;
 
-                fs::path tracePath{recordingDir};
-                tracePath /= (recordingFileName + "_path.csv");
-                outfile.open(tracePath, std::ofstream::out | std::ios_base::app);
+            fs::path tracePath{recordingDir};
+            tracePath /= (recordingFileName + "_path.csv");
+            outfile.open(tracePath, std::ofstream::out | std::ios_base::app);
 
-                // t,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi
-                outfile << ofToString(time) << "," << frameCount << ","
-                        << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
-                        << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y) << ","
-                        << tileset->name << "," << next << "," << currentPOI
-                        << std::endl;
+            // t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi
+            outfile << ofToString(time) << "," << frameCount << ","
+                    << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
+                    << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y) << ","
+                    << tileset->name << "," << next << "," << currentPOI
+                    << std::endl;
 
-                lastPathT += recordPathDt;
-            }
+            lastPathT += recordPathDt;
+            // }
 
             frameCount++;
         }
@@ -449,12 +449,23 @@ void ofApp::draw()
         ofVec2f prevPoiPos;
         for (size_t i = 0; i < sequence.size(); i++)
         {
-            auto poi = dynamic_cast<POI *>(sequence[i].get());
-            if (poi == nullptr)
+            ofVec2f pos;
+
+            if (sequence[i]->type != "poi" && sequence[i]->type != "overview")
                 continue;
 
-            ofVec2f pos = tilesetManager[poi->tileset]->viewTargets[poi->poi];
-            pos = worldToScreen(globalToWorld(pos, tilesetManager[poi->tileset]));
+            if (auto poi = dynamic_cast<POI *>(sequence[i].get()))
+            {
+                pos = tilesetManager[poi->tileset]->viewTargets[poi->poi];
+                pos = worldToScreen(globalToWorld(pos, tilesetManager[poi->tileset]));
+            }
+            else if (auto overview = dynamic_cast<Overview *>(sequence[i].get()))
+            {
+                std::shared_ptr<TileSet> tileset = tilesetManager[overview->tileset];
+                pos = globalToWorld({0.5f, 0.5f}, tileset);
+                pos = worldToScreen(pos);
+            }
+
             // Draw marker
             ofDrawLine(pos.x - 5, pos.y - 5, pos.x + 5, pos.y + 5);
             ofDrawLine(pos.x + 5, pos.y - 5, pos.x - 5, pos.y + 5);
@@ -1192,6 +1203,8 @@ void ofApp::startRecording()
     frameCount = 0;
     recording = true;
 
+    ofSetFrameRate(120);
+
     playSequence();
 }
 
@@ -1216,6 +1229,7 @@ void ofApp::stopRecording()
     dumpState(statePath);
 
     recording = false;
+    ofSetFrameRate(60);
     ofLog() << "Render finished";
 }
 
@@ -1396,14 +1410,23 @@ void ofApp::visit(Drill &ev)
 
 void ofApp::visit(Overview &ev)
 {
-    if (!currentTileSet)
-    {
-        ofLogWarning() << "Overview: no currentTileSet set";
-        nextStep();
-        return;
-    }
+    currentTileSet = tilesetManager[ev.tileset];
 
     ofVec2f coords = globalToWorld({0.5f, 0.5f}, currentTileSet);
+
+    if (rotationAngle.getValue() < 0.f)
+    {
+        rotationAngle.setTarget(rotationAngle.getTargetValue() + 360.f);
+        rotationAngle.setValue(rotationAngle.getValue() + 360.f);
+    }
+
+    orientationStartAngle = rotationAngle.getValue();
+    if (orientationStartAngle > 180.f)
+        orientationEndAngle = 360.f;
+    else
+        orientationEndAngle = 0.f;
+
+    targetOrientation = true;
 
     float oldFlyHeight = flyHeight;
     flyHeight = ev.value;
@@ -1442,6 +1465,7 @@ void ofApp::animationFinished(ofxAnimatableFloat::AnimationEvent &ev)
 {
     if (ev.who == &viewTargetAnim)
     {
+        targetOrientation = false;
         nextStep();
     }
     else if (ev.who == &drillZoomAnim)
@@ -1582,6 +1606,8 @@ void ofApp::jumpToSequenceStep(size_t step, bool focusZoom)
 
             if (focusZoom)
                 jumpZoom(2.f);
+            else
+                jumpZoom(flyHeight);
 
             continue;
         }
@@ -1595,11 +1621,21 @@ void ofApp::jumpToSequenceStep(size_t step, bool focusZoom)
         {
             jumpTo(globalToWorld({0.5f, 0.5f}, currentTileSet));
             jumpZoom(overview->value);
+            rotationAngle.jumpTo(0.f);
 
             continue;
         }
+        else if (auto *parameter = dynamic_cast<ParameterChange *>(ev.get()))
+        {
+            if (parameter->parameter == "flyHeight")
+                jumpZoom(parameter->value);
 
-        ev->accept(*this);
+            ev->accept(*this);
+        }
+        else
+        {
+            ev->accept(*this);
+        }
     }
 }
 
@@ -1681,7 +1717,8 @@ bool ofApp::loadSequence(const std::string &name)
         else if (type == "overview")
         {
             float value = root[i]["value"].asFloat();
-            sequence.emplace_back(std::make_shared<Overview>(value));
+            std::string tileset = root[i]["tileset"].asString();
+            sequence.emplace_back(std::make_shared<Overview>(tileset, value));
         }
         else if (type == "wait-theta")
         {

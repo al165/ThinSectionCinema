@@ -2,10 +2,11 @@
 
 void ofApp::drawGUI()
 {
+    std::string title = "Thin Section Cinema - " + projectName;
     gui.begin();
     ImGui::SetNextWindowPos(ImGui::GetWindowViewport()->Pos + ImVec2(ofGetWidth() - 340, 10));
     ImGui::SetNextWindowSizeConstraints(ImVec2(320, 500), ImVec2(320, FLT_MAX));
-    ImGui::Begin("Thin Section Cinema", NULL, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin(title.c_str(), NULL, ImGuiWindowFlags_AlwaysAutoResize);
 
     ImGuiIO &io = ImGui::GetIO();
     disableMouse = io.WantCaptureMouse;
@@ -376,170 +377,203 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Sequence"))
     {
-        ImGui::SeparatorText("Jump value");
-        static float jumpStateTheta = 0.f;
-        ImGui::SliderFloat("theta", &jumpStateTheta, 0.f, 180.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##jumpTheta"))
-            selected_event = addSequenceEvent(std::make_shared<Jump>("theta", jumpStateTheta), selected_event + 1);
+        if (ImGui::TreeNode("Jump to"))
+        {
+            static float jumpStateTheta = 0.f;
+            ImGui::SliderFloat("theta", &jumpStateTheta, 0.f, 180.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##jumpTheta"))
+                selected_event = addSequenceEvent(std::make_shared<Jump>("theta", jumpStateTheta), selected_event + 1);
 
-        static float jumpStateRotation = 0.f;
-        ImGui::SliderFloat("rotation", &jumpStateRotation, 0.f, 360.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##jumpRotation"))
-            selected_event = addSequenceEvent(std::make_shared<Jump>("rotation", jumpStateRotation), selected_event + 1);
+            static float jumpStateRotation = 0.f;
+            ImGui::SliderFloat("rotation", &jumpStateRotation, 0.f, 360.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##jumpRotation"))
+                selected_event = addSequenceEvent(std::make_shared<Jump>("rotation", jumpStateRotation), selected_event + 1);
 
-        static float jumpStateZoom = 2.f;
-        ImGui::SliderFloat("zoom", &jumpStateZoom, 0.f, 5.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##jumpZoom"))
-            selected_event = addSequenceEvent(std::make_shared<Jump>("zoom", jumpStateZoom), selected_event + 1);
+            static float jumpStateZoom = 2.f;
+            ImGui::SliderFloat("zoom", &jumpStateZoom, 0.f, 5.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##jumpZoom"))
+                selected_event = addSequenceEvent(std::make_shared<Jump>("zoom", jumpStateZoom), selected_event + 1);
 
-        ImGui::SeparatorText("Add action");
+            ImGui::TreePop();
+        }
+
         static float waitTime = 1.0f;
-        ImGui::SliderFloat("waitTime", &waitTime, 0.f, 10.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##waitTime"))
-            selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
-
         static float waitTheta = 0.f;
-        ImGui::SliderFloat("waitTheta", &waitTheta, 0.f, 180.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##waitTheta"))
-            selected_event = addSequenceEvent(std::make_shared<WaitTheta>(waitTheta), selected_event + 1);
-
-        ImGui::SliderFloat("drill", &drillDepth, -1.f, 4.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##drillDepth"))
-            selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
-
         static float overviewHeight = 4.f;
-        ImGui::SliderFloat("overview", &overviewHeight, 0.f, 4.f);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("+##overviewHeight"))
+        if (ImGui::TreeNode("Action"))
         {
-            for (size_t i = selected_event; i >= 0; i--)
+            ImGui::SliderFloat("waitTime", &waitTime, 0.f, 10.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##waitTime"))
+                selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
+
+            ImGui::SliderFloat("waitTheta", &waitTheta, 0.f, 180.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##waitTheta"))
+                selected_event = addSequenceEvent(std::make_shared<WaitTheta>(waitTheta), selected_event + 1);
+
+            ImGui::SliderFloat("drill", &drillDepth, -1.f, 4.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##drillDepth"))
+                selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
+
+            ImGui::SliderFloat("overview", &overviewHeight, 0.f, 4.f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##overviewHeight"))
             {
-                if (sequence[i]->type != "poi")
-                    continue;
+                for (size_t i = selected_event; i >= 0; i--)
+                {
+                    if (sequence[i]->type != "poi")
+                        continue;
 
-                POI *poi = dynamic_cast<POI *>(sequence[i].get());
+                    POI *poi = dynamic_cast<POI *>(sequence[i].get());
 
-                selected_event = addSequenceEvent(std::make_shared<Overview>(poi->tileset, overviewHeight), selected_event + 1);
-                break;
+                    selected_event = addSequenceEvent(std::make_shared<Overview>(poi->tileset, overviewHeight), selected_event + 1);
+                    break;
+                }
             }
-        }
 
-        if (ImGui::Button("+ Load state file"))
-        {
-            ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
-            if (result.bSuccess)
-                selected_event = addSequenceEvent(std::make_shared<Load>(result.getPath()), selected_event + 1);
+            if (ImGui::Button("+ Load state file"))
+            {
+                ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
+                if (result.bSuccess)
+                    selected_event = addSequenceEvent(std::make_shared<Load>(result.getPath()), selected_event + 1);
+            }
+            if (ImGui::Button("+ End"))
+                selected_event = addSequenceEvent(std::make_shared<End>(), selected_event + 1);
+
+            ImGui::TreePop();
         }
-        if (ImGui::Button("+ End"))
-            selected_event = addSequenceEvent(std::make_shared<End>(), selected_event + 1);
 
         ImGui::SeparatorText("Edit sequence");
 
         static bool focusSequence = true;
         static bool focusZoom = false;
 
-        if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
+        ImVec2 outer_size = ImVec2(0.0f, 16 * ImGui::GetTextLineHeightWithSpacing());
+        static ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV;
+
+        // if (ImGui::BeginListBox("##Sequence", ImVec2(-FLT_MIN, 16 * ImGui::GetTextLineHeightWithSpacing())))
+        if (ImGui::BeginTable("Sequence view", 2, flags, outer_size))
         {
-            for (size_t i = 0; i < sequence.size(); i++)
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 10.0f);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+
+            ImGuiListClipper clipper;
+            clipper.Begin(sequence.size());
+            // for (size_t i = 0; i < sequence.size(); i++)
+            while (clipper.Step())
             {
-                auto ev = sequence[i];
-                const bool is_selected = (selected_event == i);
-
-                if ((int)i == sequenceStep)
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-                else if (ev->type == "poi")
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 255, 255));
-                else if (ev->type == "parameter")
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 150));
-                else if (ev->type == "load")
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
-                else if (ev->type == "end")
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-                else
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
-
-                if (ImGui::Selectable((ev->toString() + "##event" + ofToString(i)).c_str(), is_selected))
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                 {
-                    selected_event = i;
-                    if (focusSequence)
-                        jumpToSequenceStep(i, focusZoom);
-                }
 
-                ImGui::PopStyleColor();
+                    ImGui::TableNextRow();
 
-                if (ImGui::BeginPopupContextItem())
-                {
-                    static float newValue = ev->value;
-                    selected_event = i;
-                    if (ImGui::IsWindowAppearing())
+                    auto ev = sequence[i];
+                    const bool is_selected = ((int)selected_event == i);
+
+                    if (i == sequenceStep)
+                        ImGui::TableSetBgColor(1, IM_COL32(255, 0, 0, 120));
+
+                    ImGui::TableSetColumnIndex(0);
+
+                    if (i == sequenceStep)
+                        ImGui::Text(">");
+
+                    ImGui::TableSetColumnIndex(1);
+
+                    if (ev->type == "poi")
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 255, 255));
+                    else if (ev->type == "parameter")
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 150));
+                    else if (ev->type == "load")
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
+                    else if (ev->type == "end")
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                    else
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
+
+                    if (ImGui::Selectable((ev->toString() + "##event" + ofToString(i)).c_str(), is_selected))
                     {
-                        newValue = ev->value;
-                        ImGui::SetKeyboardFocusHere();
+                        selected_event = i;
+                        if (focusSequence)
+                            jumpToSequenceStep(i, focusZoom);
                     }
 
-                    if (ev->type == "load")
-                    {
-                        if (ImGui::Button("Change state file"))
-                        {
-                            ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
-                            if (result.bSuccess)
-                            {
-                                auto *loadEv = dynamic_cast<Load *>(ev.get());
-                                if (loadEv)
-                                    loadEv->statePath = result.getPath();
+                    ImGui::PopStyleColor();
 
+                    if (ImGui::BeginPopupContextItem())
+                    {
+                        static float newValue = ev->value;
+                        selected_event = i;
+                        if (ImGui::IsWindowAppearing())
+                        {
+                            newValue = ev->value;
+                            ImGui::SetKeyboardFocusHere();
+                        }
+
+                        if (ev->type == "load")
+                        {
+                            if (ImGui::Button("Change state file"))
+                            {
+                                ofFileDialogResult result = ofSystemLoadDialog("Select a state file JSON to load", false, projectDir);
+                                if (result.bSuccess)
+                                {
+                                    auto *loadEv = dynamic_cast<Load *>(ev.get());
+                                    if (loadEv)
+                                        loadEv->statePath = result.getPath();
+
+                                    ImGui::CloseCurrentPopup();
+                                }
+                            }
+                        }
+                        else if (ev->type != "poi")
+                        {
+                            ImGui::SetNextItemWidth(-FLT_MIN);
+                            if (ImGui::InputScalar("##Value", ImGuiDataType_Float, &newValue, NULL, NULL, NULL, ImGuiInputTextFlags_EnterReturnsTrue))
+                            {
+                                ofLog() << "Update to " << newValue;
+                                ev->value = newValue;
                                 ImGui::CloseCurrentPopup();
                             }
                         }
-                    }
-                    else if (ev->type != "poi")
-                    {
-                        ImGui::SetNextItemWidth(-FLT_MIN);
-                        if (ImGui::InputScalar("##Value", ImGuiDataType_Float, &newValue, NULL, NULL, NULL, ImGuiInputTextFlags_EnterReturnsTrue))
-                        {
-                            ofLog() << "Update to " << newValue;
-                            ev->value = newValue;
-                            ImGui::CloseCurrentPopup();
-                        }
-                    }
 
-                    if (ImGui::Button("Delete"))
-                        sequence.erase(sequence.begin() + selected_event);
+                        if (ImGui::Button("Delete"))
+                            sequence.erase(sequence.begin() + selected_event);
 
-                    if (ImGui::BeginMenu("Add"))
-                    {
-                        if (ImGui::MenuItem("waitTime"))
+                        if (ImGui::BeginMenu("Add"))
                         {
-                            selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
+                            if (ImGui::MenuItem("waitTime"))
+                            {
+                                selected_event = addSequenceEvent(std::make_shared<WaitSeconds>(waitTime), selected_event + 1);
+                            }
+                            if (ImGui::MenuItem("drill"))
+                            {
+                                selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
+                            }
+                            ImGui::EndMenu();
                         }
-                        if (ImGui::MenuItem("drill"))
-                        {
-                            selected_event = addSequenceEvent(std::make_shared<Drill>(drillDepth), selected_event + 1);
-                        }
-                        ImGui::EndMenu();
+
+                        ImGui::EndPopup();
                     }
 
-                    ImGui::EndPopup();
-                }
-
-                if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
-                {
-                    float dragY = ImGui::GetMouseDragDelta(0).y;
-                    int n_next = static_cast<int>(i) + (dragY < 0.f ? -1 : 1);
-                    if (n_next >= 0 && n_next < (int)sequence.size())
+                    if (ImGui::IsItemActive() && !ImGui::IsItemHovered())
                     {
-                        std::swap(sequence[i], sequence[n_next]);
-                        ImGui::ResetMouseDragDelta();
+                        float dragY = ImGui::GetMouseDragDelta(0).y;
+                        int n_next = static_cast<int>(i) + (dragY < 0.f ? -1 : 1);
+                        if (n_next >= 0 && n_next < (int)sequence.size())
+                        {
+                            std::swap(sequence[i], sequence[n_next]);
+                            ImGui::ResetMouseDragDelta();
+                        }
                     }
                 }
             }
-            ImGui::EndListBox();
+            ImGui::EndTable();
+            // ImGui::EndListBox();
         }
 
         ImGui::Checkbox("Focus on select", &focusSequence);

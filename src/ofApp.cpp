@@ -402,10 +402,24 @@ void ofApp::draw()
             // {
             std::shared_ptr<TileSet> tileset = tilesetManager.getTilsetAtWorldCoords(screenToWorld(screenCenter), currentZoom);
 
+            // Distance at zoomLevel 32
+            float dist = 0.f;
             std::string next = "";
             if (currentTileSet)
+            {
                 next = currentTileSet->name;
+                ofVec2f poiPos = globalToWorld(currentTileSet->viewTargets[currentPOI], currentTileSet);
+                float currentDistance = poiPos.distance(currentView.offsetWorld);
+                float multiplier = std::powf(2.f, currentZoomLevel);
 
+                // convert to distance at zoomLevel 0
+                dist = currentDistance * multiplier;
+
+                // scale to zoomLevel 32
+                dist /= 32.f;
+            }
+
+            ofVec2f centerGlobal = worldToGlobal(screenToWorld(screenCenter), tileset);
             ofVec2f leftGlobal = worldToGlobal(screenToWorld({0.f, ofGetHeight() / 2.f}), tileset);
             ofVec2f rightGlobal = worldToGlobal(screenToWorld({static_cast<float>(ofGetWidth()), ofGetHeight() / 2.f}), tileset);
 
@@ -415,14 +429,18 @@ void ofApp::draw()
             tracePath /= (recordingFileName + "_path.csv");
             outfile.open(tracePath, std::ofstream::out | std::ios_base::app);
 
-            // t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi
+            // ofVec2f screenToWorld()
+
+            // t,frame,x,y,eftX,leftY,rightX,rightY,theta,zoomLevel,rotation,currentTileset,nextTileset,poi,distance
             outfile << ofToString(time) << "," << frameCount << ","
+                    << ofToString(centerGlobal.x) << "," << ofToString(centerGlobal.y) << ","
                     << ofToString(leftGlobal.x) << "," << ofToString(leftGlobal.y) << ","
                     << ofToString(rightGlobal.x) << "," << ofToString(rightGlobal.y) << ","
-                    << tileset->name << "," << next << "," << currentPOI
+                    << ofToString(currentView.theta) << "," << ofToString(currentZoomSmooth.getValue()) << "," << rotationAngle.getValue() << ","
+                    << tileset->name << "," << next << "," << currentPOI << "," << dist
                     << std::endl;
 
-            lastPathT += recordPathDt;
+            // lastPathT += recordPathDt;
             // }
 
             frameCount++;
@@ -1184,7 +1202,7 @@ void ofApp::startRecording()
 
     ofLog() << "Starting recording at " << videoPath;
 
-    ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 10000);
+    ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 12000);
     ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
     ffmpegRecorder.setOutputPath(videoPath);
     ffmpegRecorder.setVideoCodec("libx264");
@@ -1197,7 +1215,7 @@ void ofApp::startRecording()
     tracePath /= (recordingFileName + "_path.csv");
     std::ofstream pathfile;
     pathfile.open(tracePath);
-    pathfile << "t,frame,leftX,leftY,rightX,rightY,currentTileset,nextTileset,poi" << std::endl;
+    pathfile << "t,frame,x,y,leftX,leftY,rightX,rightY,theta,zoomLevel,rotation,currentTileset,nextTileset,poi,distance" << std::endl;
 
     time = 0.f;
     frameCount = 0;
@@ -1363,7 +1381,7 @@ void ofApp::visit(POI &ev)
     currentPOI = (int)ev.poi;
     ofVec2f coords = globalToWorld(tilesetManager[tileset]->viewTargets[ev.poi], tilesetManager[tileset]);
 
-    setViewTarget(coords, doneWaiting ? 0.f : 0.5f);
+    setViewTarget(coords, 1.f);
 }
 
 void ofApp::visit(ParameterChange &ev)

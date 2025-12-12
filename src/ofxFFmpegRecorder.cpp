@@ -364,6 +364,8 @@ bool ofxFFmpegRecorder::record(float duration)
         cmd += arg + " ";
     }
 
+    LOG_NOTICE("cmd:  " + cmd);
+
 #if defined(_WIN32)
     m_DefaultRecordingFile = _popen(cmd.c_str(), "w");
 #else
@@ -403,7 +405,7 @@ bool ofxFFmpegRecorder::startCustomRecord()
     args.push_back("-y");
     args.push_back("-an");
     args.push_back("-r " + std::to_string(m_Fps));
-    args.push_back("-framerate " + std::to_string(m_Fps));
+    // args.push_back("-framerate " + std::to_string(m_Fps));
     args.push_back("-s " + std::to_string(static_cast<unsigned int>(m_VideoSize.x)) + "x" + std::to_string(static_cast<unsigned int>(m_VideoSize.y)));
     args.push_back("-f rawvideo");
     // args.push_back("-pix_fmt rgb24");
@@ -412,11 +414,12 @@ bool ofxFFmpegRecorder::startCustomRecord()
     args.push_back("-i -");
 
     args.push_back("-vcodec " + m_VideCodec);
-    args.push_back("-b:v " + std::to_string(m_BitRate) + "k");
+    // args.push_back("-b:v " + std::to_string(m_BitRate) + "k");
     args.push_back("-r " + std::to_string(m_Fps));
     args.push_back("-framerate " + std::to_string(m_Fps));
     //    args.push_back("-pix_fmt " + mOutputPixFmt );
-    args.push_back("-pix_fmt " + mOutputPixFmt);
+    // args.push_back("-pix_fmt " + mOutputPixFmt);
+    args.push_back("-pix_fmt yuv420p");
     std::copy(m_AdditionalOutputArguments.begin(), m_AdditionalOutputArguments.end(), std::back_inserter(args));
 
     args.push_back(ofToDataPath(m_OutputPath, true));
@@ -427,6 +430,8 @@ bool ofxFFmpegRecorder::startCustomRecord()
     {
         cmd += arg + " ";
     }
+
+    LOG_NOTICE("cmd:  " + cmd);
 
 #if defined(_WIN32)
     m_CustomRecordingFile = _popen(cmd.c_str(), "wb");

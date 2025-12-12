@@ -130,6 +130,7 @@ public:
     ofVec2f viewTargetWorld = {0.f, 0.f};
     ofVec2f viewStartWorld = {0.f, 0.f};
     bool focusViewTarget = false;
+    float recordStartTime = 0.f;
     float time;
     float waitEndTime, waitTheta;
     bool waiting = false;
@@ -227,3 +228,5 @@ public:
 };
 
 void pasteInto(ofPixels &dstPixels, const ofPixels &src, int x, int y);
+
+std::string formatTime(float timeSeconds);

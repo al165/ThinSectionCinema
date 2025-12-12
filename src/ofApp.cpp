@@ -1201,13 +1201,16 @@ void ofApp::startRecording()
     videoPath /= (recordingFileName + ".mp4");
 
     ofLog() << "Starting recording at " << videoPath;
+    ofLog() << "Resolution: " << ofGetWidth() << "x" << ofGetHeight();
 
-    ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 12000);
+    ffmpegRecorder.setup(true, false, {ofGetWidth(), ofGetHeight()}, recordingFps, 24000);
     ffmpegRecorder.setInputPixelFormat(OF_IMAGE_COLOR);
     ffmpegRecorder.setOutputPath(videoPath);
     ffmpegRecorder.setVideoCodec("libx264");
     ffmpegRecorder.addAdditionalInputArgument("-hide_banner");
     ffmpegRecorder.addAdditionalInputArgument("-loglevel error");
+    ffmpegRecorder.addAdditionalOutputArgument("-crf 16");
+    ffmpegRecorder.addAdditionalOutputArgument("-preset slow");
     ffmpegRecorder.startCustomRecord();
 
     // Prepare trace file
@@ -1218,6 +1221,7 @@ void ofApp::startRecording()
     pathfile << "t,frame,x,y,leftX,leftY,rightX,rightY,theta,zoomLevel,rotation,currentTileset,nextTileset,poi,distance" << std::endl;
 
     time = 0.f;
+    recordStartTime = ofGetElapsedTimef();
     frameCount = 0;
     recording = true;
 
@@ -1239,6 +1243,7 @@ void ofApp::stopRecording()
 
     waitForFrames = false;
     time = 0.f;
+    recordStartTime = ofGetElapsedTimef();
     ffmpegRecorder.stop();
 
     fs::path statePath{recordingDir};

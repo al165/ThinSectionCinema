@@ -1,5 +1,27 @@
 #include "ofApp.h"
 
+std::string formatTime(float seconds)
+{
+    if (seconds < 0)
+        seconds = 0; // clamp negative
+
+    int totalMilliseconds = static_cast<int>(std::round(seconds * 1000.0f));
+    int minutes = totalMilliseconds / 60000;
+    int msRemaining = totalMilliseconds % 60000;
+
+    int secs = msRemaining / 1000;
+    int millis = msRemaining % 1000;
+
+    std::ostringstream oss;
+    oss << std::setw(2) << std::setfill('0') << minutes
+        << ":"
+        << std::setw(2) << std::setfill('0') << secs
+        << "."
+        << std::setw(3) << std::setfill('0') << millis;
+
+    return oss.str();
+}
+
 void ofApp::drawGUI()
 {
     std::string title = "Thin Section Cinema - " + projectName;
@@ -654,6 +676,32 @@ void ofApp::drawGUI()
             ImGui::EndTable();
         }
 
+        ImGui::SeparatorText("Timings");
+        if (ImGui::BeginTable("smoothValues", 2))
+        {
+            ImGui::TableNextColumn();
+            ImGui::Text("time");
+            ImGui::TableNextColumn();
+            ImGui::Text(formatTime(time).c_str());
+
+            float realTime = ofGetElapsedTimef() - recordStartTime;
+
+            ImGui::TableNextColumn();
+            ImGui::Text("real");
+            ImGui::TableNextColumn();
+            ImGui::Text(formatTime(realTime).c_str());
+
+            float ratio = 1.f;
+            if (recording && time > 1.f)
+                ratio = time / realTime;
+
+            ImGui::TableNextColumn();
+            ImGui::Text("ratio");
+            ImGui::TableNextColumn();
+            ImGui::Text(ofToString(ratio, 4).c_str());
+
+            ImGui::EndTable();
+        }
         // ofRectangle bounds = getLayoutBounds();
         // ImGui::Text("Layout bounds: %.2f, %.2f, %.2f, %.2f", bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
 

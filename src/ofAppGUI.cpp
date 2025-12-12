@@ -632,6 +632,12 @@ void ofApp::drawGUI()
 
     if (ImGui::TreeNode("Debug"))
     {
+        ImGui::SeparatorText("Progress");
+        float progress = 0.f;
+        if (sequence.size() > 0)
+            progress = (float)sequenceStep / ((float)sequence.size() - 1);
+        ImGui::ProgressBar(progress);
+
         ImGui::SeparatorText("Animated Floats");
 
         ImGui::Text("viewTargetAnim");

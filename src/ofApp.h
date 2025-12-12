@@ -100,6 +100,7 @@ public:
     std::shared_ptr<TileSet> currentTileSet;
     int currentPOI = -1;
 
+    float zoomAdjust = 0.f;
     float zoomSpeed = 4.f;
     const float maxZoom = 1.f;
     const float minZoom = 8.f;

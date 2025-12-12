@@ -394,6 +394,9 @@ void ofApp::draw()
         // save fboFinal to video buffer
         fboFinal.readToPixels(framePixels);
 
+        // sleep to make sure data is written
+        ofSleepMillis(50);
+
         if (framePixels.getWidth() > 0 && framePixels.getHeight() > 0)
         {
             ffmpegRecorder.addSingleFrame(framePixels);
@@ -744,6 +747,11 @@ void ofApp::windowResized(int w, int h)
     screenCenter = screenRectangle.getBottomRight() / 2.f;
 
     fboFinal.allocate(w, h, GL_RGB);
+
+    // Adjust zoom
+    zoomAdjust = std::log2f(w / 1920.f);
+
+    ofLog() << "zoomAdjust: " << zoomAdjust;
 
     updateCaches();
 }
@@ -1163,7 +1171,7 @@ void ofApp::setViewTarget(ofVec2f worldCoords, float delayS)
     drill = false;
     currentZoomSmooth.warmUp = 3.f;
     currentZoomSmooth.speed = .2f;
-    currentZoomSmooth.setTarget(flyHeight);
+    currentZoomSmooth.setTarget(flyHeight - zoomAdjust);
 
     centerZoom = true;
 }
@@ -1303,6 +1311,7 @@ void ofApp::dumpState(const std::string &path)
     currentTheta.to_json(root["currentTheta"]);
     rotationAngle.to_json(root["rotationAngle"]);
     currentZoomSmooth.to_json(root["currentZoomSmooth"]);
+    // root["currentZoom"]
 
     root["vel"]["x"] = vel.x;
     root["vel"]["y"] = vel.y;
@@ -1427,7 +1436,7 @@ void ofApp::visit(Drill &ev)
     drillZoomAnim.setDuration(drillTime);
     drillZoomAnim.setRepeatType(AnimRepeat::PLAY_ONCE);
     drillZoomAnim.setCurve(AnimCurve::EASE_OUT);
-    drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), ev.value);
+    drillZoomAnim.animateFromTo(currentZoomSmooth.getValue(), ev.value - zoomAdjust);
     drill = true;
 }
 
@@ -1466,7 +1475,7 @@ void ofApp::visit(Jump &ev)
     else if (ev.state == "rotation")
         rotationAngle.jumpTo(ev.value);
     else if (ev.state == "zoom")
-        currentZoomSmooth.jumpTo(ev.value);
+        currentZoomSmooth.jumpTo(ev.value - zoomAdjust);
 
     if (sequencePlaying)
         nextStep();
@@ -1598,7 +1607,7 @@ void ofApp::jumpZoom(float zoomLevel)
 
     currentZoomSmooth.speed = 2.f;
     currentZoomSmooth.warmUp = 0.f;
-    currentZoomSmooth.jumpTo(zoomLevel);
+    currentZoomSmooth.jumpTo(zoomLevel - zoomAdjust);
     currentZoomLevel = std::clamp(
         static_cast<int>(std::floor(currentZoomSmooth.getValue())),
         maxZoomLevel,
